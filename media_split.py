@@ -71,12 +71,18 @@ def estimate_reach(points, max_reach, method="Логістична крива"):
             return max_reach / (1 + np.exp(-k*(x - x0)))
         # Підгонка кривої до точок
         try:
-            popt, _ = curve_fit(logistic, x, y, bounds=(0, [5., max(x)*2])) # Збільшено верхню межу для x0
+            # Збільшено верхню межу для x0, та встановлено меншу min_value для k щоб дозволити більш "пласкі" криві
+            popt, _ = curve_fit(logistic, x, y, bounds=([0., -np.inf], [5., np.inf]))
         except RuntimeError:
             st.warning("Не вдалося підігнати логістичну криву. Спробуйте змінити вхідні точки або метод естимації.")
             # Повернення лінійної інтерполяції як резервного варіанту
             f_linear = interp1d(x, y, kind='linear', fill_value="extrapolate")
             return lambda x_new: np.clip(f_linear(x_new), 0, max_reach)
+        except ValueError as e:
+            st.error(f"Помилка при підгонці логістичної кривої: {e}. Перевірте вхідні точки.")
+            f_linear = interp1d(x, y, kind='linear', fill_value="extrapolate")
+            return lambda x_new: np.clip(f_linear(x_new), 0, max_reach)
+
 
         def f(x_new):
             return np.clip(logistic(x_new, *popt), 0, max_reach)
@@ -134,7 +140,8 @@ df["Ефективний"] = (df["TB TRP"] >= tb_clutter) & (df["Digital IMP (т
 
 # Розрахунок CPR (Cost Per Reach)
 # Перевірка ділення на нуль для CrossMedia Reach
-df["CPR"] = budget / df["CrossMedia Reach %"] if (df["CrossMedia Reach %"] != 0).all() else np.inf
+# Якщо CrossMedia Reach дорівнює 0, CPR вважається нескінченним
+df["CPR"] = budget / df["CrossMedia Reach %"]
 df.loc[df["CrossMedia Reach %"] == 0, "CPR"] = np.inf
 
 
@@ -209,7 +216,7 @@ st.plotly_chart(fig2)
 
 # --- Export to Excel ---
 output = BytesIO()
-with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+with pd.ExcelWriter(output, engine='openpyxl') as writer: # Змінено рушій на 'openpyxl'
     df.to_excel(writer, index=False, sheet_name="Options")
     workbook  = writer.book
     worksheet = writer.sheets["Options"]
@@ -234,6 +241,5 @@ with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
     chart.set_y_axis({'name': 'Доля бюджету'})
     worksheet.insert_chart('H2', chart) # Розміщення графіку в Excel
 
-    # writer.save() # Видалено, оскільки 'with' оператор автоматично зберігає та закриває
+    # writer.save() # Цей рядок був видалений, оскільки 'with' оператор автоматично зберігає та закриває
 st.download_button("⬇️ Завантажити результати в Excel", data=output.getvalue(), file_name="media_split.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
