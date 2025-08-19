@@ -26,7 +26,7 @@ with st.sidebar:
 
 # --- Введення точок для ТБ і Digital ---
 def input_points(media_name, max_reach):
-    st.subheader(f"{media_name} — Введіть 2-5 точок TRP → Reach (%)")
+    st.subheader(f"{media_name} — Введіть 2-5 точок TRP → Reach (%) (для естимації)")
     trp_points, reach_points = [], []
     for i in range(5):
         cols = st.columns(2)
@@ -72,7 +72,7 @@ for i, split in enumerate(split_values, start=1):
     dig_imp = dig_budget / dig_cost_per_imp
     dig_trp = dig_imp / audience_size * 100
 
-    # Естимація Reach через сплайн
+    # --- Естимація Reach через сплайн (незалежно від введених точок) ---
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
     dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))
     cross_reach = tv_reach + dig_reach - tv_reach*dig_reach
@@ -171,7 +171,6 @@ wb = Workbook()
 ws = wb.active
 ws.title = "Media Split"
 
-# Запис даних
 for r in dataframe_to_rows(df, index=False, header=True):
     ws.append(r)
 
@@ -192,21 +191,17 @@ ws.add_chart(bar, "P2")
 # Лінійний графік охоплення
 line = LineChart()
 line.title = "Reach TV / Digital / Cross"
-data_ref2 = Reference(ws, min_col=df.columns.get_loc("Reach_TV %")+1,
+line.width = 20
+line.height = 10
+line_data = Reference(ws, min_col=df.columns.get_loc("Reach_TV %")+1,
                       max_col=df.columns.get_loc("Cross_Reach %")+1,
                       min_row=1, max_row=len(df)+1)
-line.add_data(data_ref2, titles_from_data=True)
-line.set_categories(cats)
-line.height = 10
-line.width = 20
+line_cats = Reference(ws, min_col=1, min_row=2, max_row=len(df)+1)
+line.add_data(line_data, titles_from_data=True)
+line.set_categories(line_cats)
 ws.add_chart(line, "P20")
 
 wb.save(output)
-output.seek(0)
-
-st.download_button(
-    label="⬇️ Завантажити Excel",
-    data=output,
-    file_name="media_split_results.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+st.download_button("⬇️ Завантажити Excel", output.getvalue(),
+                   file_name="media_split.xlsx",
+                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
