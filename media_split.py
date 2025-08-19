@@ -234,5 +234,5 @@ with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
     chart.set_y_axis({'name': 'Доля бюджету'})
     worksheet.insert_chart('H2', chart) # Розміщення графіку в Excel
 
-    writer.save()
+    # writer.save() # Видалено, оскільки 'with' оператор автоматично зберігає та закриває
 st.download_button("⬇️ Завантажити результати в Excel", data=output.getvalue(), file_name="media_split.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
