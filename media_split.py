@@ -24,7 +24,7 @@ digital_price = st.sidebar.number_input("Ціна 1000 імпр. Діджита�
 # Клаттер ТБ TRP
 tb_clutter = st.sidebar.number_input("Клаттер ТБ TRP", min_value=0, max_value=5000, value=300)
 # Клаттер Діджитал імпр.
-digital_clutter = st.sidebar.number_input("Клаттер Діджитал імпр.", min_value=0, max_value=5_000_000, value=500_000)
+digital_clutter = st.sidebar.number_input("Клаттер Діджитал імпр. (тис. імпр.)", min_value=0, max_value=5_000_000, value=500_000) # Додано "(тис. імпр.)"
 # Кількість опцій для генерації
 num_options = st.sidebar.number_input("Кількість опцій", min_value=3, max_value=20, value=10)
 
@@ -169,8 +169,18 @@ st.markdown(f"""
 """)
 st.markdown("---")
 
+# --- Display Effective Options ---
+st.subheader("Ефективні опції (показники вище клатера)")
+# Фільтруємо DataFrame, щоб показати лише ефективні опції
+effective_df = df[df["Ефективний"]].copy() # Створюємо копію, щоб уникнути SettingWithCopyWarning
+if not effective_df.empty:
+    st.dataframe(effective_df.style.apply(highlight, axis=1))
+else:
+    st.info("Немає опцій, що відповідають критеріям клатера для обох медіа.")
+st.markdown("---")
 
-# --- Display dataframe ---
+
+# --- Display all options dataframe ---
 def highlight(row):
     """
     Функція для виділення рядків у DataFrame.
@@ -183,7 +193,7 @@ def highlight(row):
     else:
         return ['']*len(row)
 
-st.subheader("Опції та ефективність")
+st.subheader("Усі опції та ефективність")
 # Відображення DataFrame з застосованим стилем
 st.dataframe(df.style.apply(highlight, axis=1))
 st.markdown("---")
