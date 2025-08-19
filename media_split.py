@@ -89,14 +89,28 @@ col1.metric("Найнижчий CPR", f"{best_option['CPR']:.2f}")
 col2.metric("Cross Reach %", f"{best_option['Cross_Reach %']:.1f}%")
 col3.metric("TRP Digital", f"{best_option['TRP_Digital']:.1f}")
 
-# --- Таблиця ---
-def highlight(row):
-    if row.name == best_idx:
-        return ["background-color: deepskyblue"]*len(row)
-    color = "lightgreen" if row["Ефективний"] else "lightcoral"
-    return [color]*len(row)
+# --- HTML таблиця з підсвіткою ---
+def render_colored_table(df, best_idx):
+    def color_row(row):
+        if row.name == best_idx:
+            return 'background-color: deepskyblue; color: white'
+        elif row["Ефективний"]:
+            return 'background-color: lightgreen'
+        else:
+            return 'background-color: lightcoral'
+
+    html = "<table style='border-collapse: collapse; width: 100%;'>"
+    html += "<tr>" + "".join([f"<th style='border: 1px solid black; padding: 5px;'>{c}</th>" for c in df.columns]) + "</tr>"
+
+    for idx, row in df.iterrows():
+        color = color_row(row)
+        html += "<tr>" + "".join([f"<td style='border: 1px solid black; padding: 5px; {color}'>{v}</td>" for v in row]) + "</tr>"
+
+    html += "</table>"
+    return html
+
 st.subheader("Результати всіх варіантів")
-st.dataframe(df.style.apply(highlight, axis=1))
+st.markdown(render_colored_table(df, best_idx), unsafe_allow_html=True)
 
 # --- Plotly графіки ---
 st.subheader("📊 Розподіл бюджету по сплітах")
