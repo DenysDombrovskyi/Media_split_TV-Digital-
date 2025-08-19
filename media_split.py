@@ -1,117 +1,116 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+from itertools import product
 
-st.title("Оптимальний спліт ТБ / Digital")
+# -------------------------------
+# Допоміжні функції
+# -------------------------------
 
-# Вхідні дані
-budget = st.number_input("Загальний бюджет", min_value=1000, step=1000)
+def cross_media_reach(reach_tv, reach_digital):
+    """Кросмедійне охоплення як ймовірність двох незалежних подій"""
+    return reach_tv + reach_digital - (reach_tv * reach_digital)
+
+def calculate_option(budget, cost_tv, cost_digital, 
+                     clutter_tv, clutter_digital,
+                     competitor_tv, competitor_digital,
+                     weeks, share_tv):
+    """
+    Розрахунок одного спліта ТВ/Діджитал
+    """
+    spend_tv = budget * share_tv
+    spend_digital = budget * (1 - share_tv)
+
+    # Якщо немає грошей
+    if spend_tv < cost_tv or spend_digital < cost_digital:
+        return None
+
+    # Розрахунок тиску
+    trp_tv = spend_tv / cost_tv
+    trp_digital = spend_digital / cost_digital
+
+    # Клаттер
+    eff_trp_tv = max(0, trp_tv - clutter_tv)
+    eff_trp_digital = max(0, trp_digital - clutter_digital)
+
+    # Охоплення (умовно: saturating function)
+    reach_tv = 1 - np.exp(-eff_trp_tv / (weeks * 100))
+    reach_digital = 1 - np.exp(-eff_trp_digital / (weeks * 100))
+
+    # Кросмедійне охоплення
+    cross_reach = cross_media_reach(reach_tv, reach_digital)
+
+    # Перевірка конкурентів
+    tv_vs_comp = "OK" if eff_trp_tv >= competitor_tv else "Нижче конкурентів"
+    dig_vs_comp = "OK" if eff_trp_digital >= competitor_digital else "Нижче конкурентів"
+
+    return {
+        "Share TV": round(share_tv * 100, 1),
+        "Spend TV": round(spend_tv, 0),
+        "Spend Digital": round(spend_digital, 0),
+        "TRP TV": round(eff_trp_tv, 1),
+        "TRP Digital": round(eff_trp_digital, 1),
+        "Reach TV": round(reach_tv * 100, 1),
+        "Reach Digital": round(reach_digital * 100, 1),
+        "Cross Reach": round(cross_reach * 100, 1),
+        "TV vs Competitors": tv_vs_comp,
+        "Digital vs Competitors": dig_vs_comp
+    }
+
+# -------------------------------
+# Streamlit UI
+# -------------------------------
+
+st.title("📊 Оптимальний спліт ТВ / Діджитал")
+
+budget = st.number_input("Загальний бюджет, $", min_value=1000, value=100000, step=1000)
+cost_tv = st.number_input("Вартість 1 TRP на ТБ, $", min_value=1, value=500)
+cost_digital = st.number_input("Вартість 1000 цільових імпресій, $", min_value=1, value=5)
+
+clutter_tv = st.number_input("Клаттер (ТРП на тиждень)", min_value=0, value=50)
+clutter_digital = st.number_input("Клаттер (тис. імпресій на тиждень)", min_value=0, value=100)
+
+competitor_tv = st.number_input("Конкурентний тиск на ТБ (ТРП на тиждень)", min_value=0, value=150)
+competitor_digital = st.number_input("Конкурентний тиск у Digital (тис. імпресій на тиждень)", min_value=0, value=300)
+
 weeks = st.number_input("Тривалість флайту (тижні)", min_value=1, value=4)
+num_options = st.slider("Кількість варіантів", min_value=5, max_value=10, value=5)
 
-# ТВ параметри
-st.subheader("Телебачення")
-tv_cpt = st.number_input("Вартість 1 TRP (грн)", min_value=1.0, value=10000.0)
-comp_tv_trp_week = st.number_input("Тиск конкурентів у ТБ (TRP/тиждень)", min_value=0, value=50)
+# -------------------------------
+# Генерація варіантів
+# -------------------------------
+results = []
+splits = np.linspace(0.1, 0.9, num_options)  # частки ТВ
 
-# Digital параметри
-st.subheader("Digital")
-dig_cpm = st.number_input("Вартість 1000 цільових імпресій (грн)", min_value=1.0, value=200.0)
-comp_dig_imp_week = st.number_input("Тиск конкурентів у Digital (тис. імпресій/тиждень)", min_value=0, value=500)
+for share_tv in splits:
+    option = calculate_option(
+        budget, cost_tv, cost_digital,
+        clutter_tv, clutter_digital,
+        competitor_tv, competitor_digital,
+        weeks, share_tv
+    )
+    if option:
+        results.append(option)
 
-# Функції охоплення
-def reach_tv(trp):
-    return 1 - np.exp(-0.015 * trp)
-
-def reach_digital(imps_mln):
-    return 1 - np.exp(-0.25 * imps_mln)
-
-options = []
-for share in np.linspace(0.1, 0.9, 9):  # 9 опцій від 10% до 90%
-    tv_budget = budget * share
-    dig_budget = budget * (1 - share)
-
-    tv_trp = tv_budget / tv_cpt
-    dig_imps = dig_budget / dig_cpm * 1000  # бо CPM
-
-    # Тижневий тиск
-    tv_weekly_trp = tv_trp / weeks
-    dig_weekly_imp = dig_imps / weeks / 1000  # в тис.
-
-    # Мінімальні вимоги
-    if tv_weekly_trp < comp_tv_trp_week or dig_weekly_imp < comp_dig_imp_week:
-        continue
-
-    # Охоплення
-    r_tv = reach_tv(tv_trp)
-    r_dig = reach_digital(dig_imps / 1e6)  # в млн
-
-    r_cross = 1 - (1 - r_tv) * (1 - r_dig)
-
-    # SPP
-    som_tv = share
-    som_dig = 1 - share
-    sov_tv = tv_weekly_trp / (tv_weekly_trp + comp_tv_trp_week) if (tv_weekly_trp + comp_tv_trp_week) > 0 else 0
-    sov_dig = dig_weekly_imp / (dig_weekly_imp + comp_dig_imp_week) if (dig_weekly_imp + comp_dig_imp_week) > 0 else 0
-
-    spp_tv = sov_tv / som_tv if som_tv > 0 else 0
-    spp_dig = sov_dig / som_dig if som_dig > 0 else 0
-
-    # Статус
-    status = "✅ ОК"
-    if tv_weekly_trp < comp_tv_trp_week and dig_weekly_imp < comp_dig_imp_week:
-        status = "❌ Нижче конкурентів у ТБ та Digital"
-    elif tv_weekly_trp < comp_tv_trp_week:
-        status = "❌ Нижче конкурентів у ТБ"
-    elif dig_weekly_imp < comp_dig_imp_week:
-        status = "❌ Нижче конкурентів у Digital"
-
-    options.append({
-        "ТБ %": round(share*100),
-        "Digital %": round((1-share)*100),
-        "TRP total": round(tv_trp, 1),
-        "TRP/week": round(tv_weekly_trp, 1),
-        "Imp (млн)": round(dig_imps/1e6, 2),
-        "Imp/week (тис.)": round(dig_weekly_imp, 1),
-        "Reach TV": round(r_tv*100, 1),
-        "Reach Dig": round(r_dig*100, 1),
-        "Cross Reach": round(r_cross*100, 1),
-        "SPP TV": round(spp_tv, 2),
-        "SPP Dig": round(spp_dig, 2),
-        "Status": status
-    })
-
-# --- Перевірка бюджету ---
-min_budget_tv = comp_tv_trp_week * weeks * tv_cpt  # мін. бюджет на ТБ
-min_budget_dig = comp_dig_imp_week * weeks * dig_cpm  # мін. бюджет на Digital (тис. CPM → множимо)
-min_total_budget = min_budget_tv + min_budget_dig
-
-if not options:
-    st.error(f"Ваш бюджет = {budget:,.0f} грн\n"
-             f"Мінімальний бюджет = {min_total_budget:,.0f} грн\n"
-             f"Недостатньо: треба +{(min_total_budget - budget):,.0f} грн\n\n"
-             f"👉 Спробуйте скоротити тривалість флайту (зараз {weeks} тижнів).")
-else:
-    df = pd.DataFrame(options)
+if results:
+    df = pd.DataFrame(results)
     st.dataframe(df)
 
-    # Завантаження в Excel
-    excel_file = "split_results.xlsx"
-    df.to_excel(excel_file, index=False)
-
-    with open(excel_file, "rb") as f:
-        st.download_button("⬇️ Завантажити Excel", f, file_name=excel_file)
-
-    # --- Візуалізація ---
-    st.subheader("Візуалізація Cross Reach")
-    fig, ax = plt.subplots()
-
-    for i, row in df.iterrows():
-        color = "green" if "✅" in row["Status"] else "red"
-        ax.scatter(row["ТБ %"], row["Cross Reach"], color=color, s=100)
-        ax.text(row["ТБ %"], row["Cross Reach"]+0.5, row["Status"], fontsize=8, ha="center")
-
-    ax.set_xlabel("Частка бюджету на ТБ (%)")
-    ax.set_ylabel("Cross Reach (%)")
-    ax.set_title("Кросмедійне охоплення за різних сплітів")
+    # Графік
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(df["Share TV"], df["Cross Reach"], marker="o")
+    ax.set_xlabel("Частка ТВ, %")
+    ax.set_ylabel("Кросмедійне охоплення, %")
+    ax.set_title("Залежність охоплення від спліту")
     st.pyplot(fig)
+
+    # Експорт
+    if st.button("📥 Завантажити Excel"):
+        file_path = "media_split_results.xlsx"
+        df.to_excel(file_path, index=False)
+        with open(file_path, "rb") as f:
+            st.download_button("Скачати файл", f, file_name=file_path)
+else:
+    st.error("❌ Недостатньо бюджету для запуску кампанії. Спробуйте збільшити бюджет або скоротити тривалість флайту.")
+
