@@ -9,7 +9,7 @@ from openpyxl.chart import BarChart, Reference
 
 st.title("📊 Оптимальний спліт ТБ + Digital з CPR і графіком Excel")
 
-# --- 1️⃣ Введення точок охоплення ---
+# --- Введення точок охоплення ---
 st.subheader("Введіть 5 точок TRP → Reach % для ТБ")
 tv_trp_points, tv_reach_points = [], []
 for i in range(5):
@@ -58,7 +58,8 @@ for split in np.linspace(0.1, 0.9, n_options):
     tv_trp = tv_budget / tv_cost_per_trp
     dig_imp = dig_budget / dig_cost_per_imp * 1000
 
-    tv_reach = float(np.clip(tv_spline(tv_trp), 0, 1))
+    # --- Обмеження Reach ТБ до 82%
+    tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
     dig_reach = float(np.clip(dig_spline(dig_imp), 0, 1))
     cross_reach = tv_reach + dig_reach - tv_reach * dig_reach
 
@@ -104,17 +105,16 @@ def highlight(row):
 st.subheader("Результати сплітів")
 st.dataframe(df.style.apply(highlight, axis=1))
 
-# --- 1️⃣ Гістограма бюджету ---
-st.subheader("📊 Розподіл бюджету по варіантах спліту")
+# --- 1️⃣ Stacked графік бюджету ---
+st.subheader("📊 Розподіл бюджету по варіантах спліту (stacked)")
 fig, ax = plt.subplots(figsize=(10,5))
-width = 0.35
 x = np.arange(len(df))
-ax.bar(x - width/2, df["Бюджет ТБ"], width, label="ТБ")
-ax.bar(x + width/2, df["Бюджет Digital"], width, label="Digital")
+ax.bar(x, df["Бюджет ТБ"], label="ТБ")
+ax.bar(x, df["Бюджет Digital"], bottom=df["Бюджет ТБ"], label="Digital")
 ax.set_xticks(x)
 ax.set_xticklabels(df["Спліт ТБ"])
 ax.set_ylabel("Бюджет")
-ax.set_title("Розподіл бюджету по сплітах")
+ax.set_title("Розподіл бюджету по сплітах (stacked)")
 ax.legend()
 plt.xticks(rotation=45)
 st.pyplot(fig)
