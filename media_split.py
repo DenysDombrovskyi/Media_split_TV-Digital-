@@ -31,8 +31,14 @@ def input_points(media_name):
     reach_points = []
     for i in range(5):
         cols = st.columns(2)
-        trp = cols[0].number_input(f"{media_name} TRP точка {i+1}", min_value=0.0, max_value=1000.0, value=50.0*(i+1))
-        reach = cols[1].number_input(f"{media_name} Reach % точка {i+1}", min_value=0.0, max_value=100.0, value=20.0*(i+1))
+        trp = cols[0].number_input(
+            f"{media_name} TRP точка {i+1}", 
+            min_value=1.0, max_value=6000.0, value=50.0*(i+1), step=10.0
+        )
+        reach = cols[1].number_input(
+            f"{media_name} Reach % точка {i+1}", 
+            min_value=0.0, max_value=100.0, value=20.0*(i+1), step=1.0
+        )
         trp_points.append(trp)
         reach_points.append(reach/100)
     return CubicSpline(trp_points, reach_points), trp_points
