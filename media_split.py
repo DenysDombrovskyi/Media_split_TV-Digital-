@@ -109,11 +109,11 @@ col1.metric("Найнижчий CPR", f"{best_option['CPR']:.2f}")
 col2.metric("Cross Reach %", f"{best_option['Cross_Reach %']:.1f}%")
 col3.metric("TRP Digital", f"{best_option['TRP_Digital']:.1f}")
 
-# --- Опції показу точок ---
-show_tv_points = st.checkbox("Показувати точки ТБ", value=False)
-show_dig_points = st.checkbox("Показувати точки Digital", value=False)
+# --- Чекбокси для точок ---
+show_tv_points = st.checkbox("Показувати точки ТБ", value=True)
+show_dig_points = st.checkbox("Показувати точки Digital", value=True)
 
-# --- Графіки ---
+# --- Графік долей бюджету ---
 st.subheader("📊 Долі бюджету")
 df_budget_plot = df.melt(id_vars=["Опція"], value_vars=["Доля ТБ %", "Доля Digital %"],
                          var_name="Медіа", value_name="Доля %")
@@ -125,12 +125,12 @@ fig_budget.update_yaxes(title_text="Доля бюджету (%)")
 fig_budget.update_traces(texttemplate="%{text:.1f}%", textposition="inside")
 st.plotly_chart(fig_budget, use_container_width=True)
 
+# --- Графік охоплення ---
 st.subheader("📈 Охоплення")
 fig_reach = px.line(df, x="Опція", y=["Reach_TV %","Reach_Digital %","Cross_Reach %"],
                     markers=True, title="Reach TV / Digital / Cross")
 
 if show_tv_points:
-    tv_trp_pts = [tv_spline.x[i] for i in range(5)]
     tv_reach_pts = [tv_spline.y[i]*100 for i in range(5)]
     fig_reach.add_scatter(
         x=[f"Опція {i+1}" for i in range(5)],
@@ -143,7 +143,6 @@ if show_tv_points:
     )
 
 if show_dig_points:
-    dig_trp_pts = [dig_spline.x[i] for i in range(5)]
     dig_reach_pts = [dig_spline.y[i]*100 for i in range(5)]
     fig_reach.add_scatter(
         x=[f"Опція {i+1}" for i in range(5)],
