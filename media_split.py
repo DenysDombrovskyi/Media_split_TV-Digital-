@@ -21,10 +21,12 @@ split_step = st.sidebar.selectbox("Крок спліту (%)", [5, 10, 15, 20])
 tb_price = st.sidebar.number_input("Ціна 1 TRP ТБ (грн)", min_value=1, max_value=1_000_000, value=500)
 # Ціна 1000 імпр. Діджитал
 digital_price = st.sidebar.number_input("Ціна 1000 імпр. Діджитал (грн)", min_value=1, max_value=1_000_000, value=1000)
-# Клаттер ТБ TRP
-tb_clutter = st.sidebar.number_input("Клаттер ТБ TRP", min_value=0, max_value=5000, value=300)
-# Клаттер Діджитал імпр.
-digital_clutter = st.sidebar.number_input("Клаттер Діджитал імпр. (тис. імпр.)", min_value=0, max_value=5_000_000, value=500_000) # Додано "(тис. імпр.)"
+# Клаттер ТБ TRP (тижневий)
+tb_clutter = st.sidebar.number_input("Клаттер ТБ TRP (тижневий)", min_value=0, max_value=5000, value=300)
+# Клаттер Діджитал імпр. (тижневий)
+digital_clutter = st.sidebar.number_input("Клаттер Діджитал імпр. (тис. імпр., тижневий)", min_value=0, max_value=5_000_000, value=500_000)
+# Кількість тижнів в ефірі
+num_weeks_on_air = st.sidebar.number_input("Кількість тижнів в ефірі", min_value=1, max_value=52, value=4)
 # Кількість опцій для генерації
 num_options = st.sidebar.number_input("Кількість опцій", min_value=3, max_value=20, value=10)
 
@@ -127,13 +129,13 @@ for i in range(num_options):
     # Додавання опції до списку
     options.append({
         "Опція": i+1,
-        "TB TRP": tb_trp,
+        "TB TRP": tb_trp, # Загальний TRP за кампанію
         "TB Reach %": tb_reach,
-        "Digital IMP (тис)": digital_imp,
+        "Digital IMP (тис)": digital_imp, # Загальні імпр. за кампанію
         "Digital Reach %": digital_reach,
         "CrossMedia Reach %": cross_reach*100,
-        "TB % Budget": tb_percent_of_budget,  # Додано для відображення в таблиці
-        "Digital % Budget": digital_percent_of_budget # Додано для відображення в таблиці
+        "TB % Budget": tb_percent_of_budget,
+        "Digital % Budget": digital_percent_of_budget
     })
 
 df = pd.DataFrame(options)
@@ -143,8 +145,10 @@ df = pd.DataFrame(options)
 df["TB Clutter TRP"] = tb_clutter
 df["Digital Clutter IMP (тис)"] = digital_clutter
 
-# Логіка ефективності: опція ефективна, якщо показники вище клатера
-df["Ефективний"] = (df["TB TRP"] >= tb_clutter) & (df["Digital IMP (тис)"] >= digital_clutter)
+# Логіка ефективності: опція ефективна, якщо тижневі показники вище клатера
+# Поділяємо загальний TRP та IMP на кількість тижнів для порівняння з тижневим клатером
+df["Ефективний"] = ( (df["TB TRP"] / num_weeks_on_air) >= tb_clutter) & \
+                    ( (df["Digital IMP (тис)"] / num_weeks_on_air) >= digital_clutter)
 
 # Розрахунок CPR (Cost Per Reach)
 # Перевірка ділення на нуль для CrossMedia Reach
@@ -170,25 +174,14 @@ st.subheader("Найкраща опція")
 best_option = df.loc[best_idx]
 st.markdown(f"""
     **Опція {int(best_option['Опція'])}** (Найнижчий СПР серед ефективних):
-    * **TB TRP**: {best_option['TB TRP']:.2f}
-    * **Digital IMP (тис)**: {best_option['Digital IMP (тис)']:.2f}
+    * **TB TRP**: {best_option['TB TRP']:.2f} (загальний)
+    * **Digital IMP (тис)**: {best_option['Digital IMP (тис)']:.2f} (загальні)
     * **CrossMedia Reach %**: {best_option['CrossMedia Reach %']:.2f}%
     * **СПР**: {best_option['CPR']:.2f} грн за % охоплення
 """)
 st.markdown("---")
 
-# --- Display Effective Options ---
-st.subheader("Ефективні опції (показники вище клатера)")
-# Фільтруємо DataFrame, щоб показати лише ефективні опції
-effective_df = df[df["Ефективний"]].copy() # Створюємо копію, щоб уникнути SettingWithCopyWarning
-if not effective_df.empty:
-    st.dataframe(effective_df.style.apply(highlight, axis=1))
-else:
-    st.info("Немає опцій, що відповідають критеріям клатера для обох медіа.")
-st.markdown("---")
-
-
-# --- Display all options dataframe ---
+# --- Styling function for DataFrames ---
 def highlight(row):
     """
     Функція для виділення рядків у DataFrame.
@@ -201,9 +194,24 @@ def highlight(row):
     else: # Якщо опція неефективна
         return ['background-color: lightcoral']*len(row) # Світло-червона для неефективних
 
+# Apply styling to the full DataFrame once
+styled_full_df = df.style.apply(highlight, axis=1)
+
+# --- Display Effective Options ---
+st.subheader("Ефективні опції (показники тижневого тиску вище клатера)")
+# Фільтруємо вже стилізований DataFrame, щоб показати лише ефективні опції
+effective_styled_df = styled_full_df[df["Ефективний"]] 
+if not effective_styled_df.empty:
+    st.dataframe(effective_styled_df) # Відображаємо вже стилізований ефективний DataFrame
+else:
+    st.info("Немає опцій, що відповідають критеріям клатера для обох медіа.")
+st.markdown("---")
+
+
+# --- Display all options dataframe ---
 st.subheader("Усі опції та ефективність")
-# Відображення DataFrame з застосованим стилем
-st.dataframe(df.style.apply(highlight, axis=1))
+# Відображення вже стилізованого повного DataFrame
+st.dataframe(styled_full_df)
 st.markdown("---")
 
 # --- Plotly graphs ---
