@@ -5,13 +5,22 @@ from scipy.interpolate import CubicSpline
 import plotly.express as px
 import io
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, LineChart, Reference
 
 st.set_page_config(page_title="Media Split Optimizer", layout="wide")
+st.title("📊 Сучасний медіа-спліт ТБ + Digital")
 
-st.title("📊 Оптимальний спліт ТБ + Digital (сучасний інтерфейс)")
+# --- Sidebar для ключових параметрів ---
+st.sidebar.header("Основні параметри")
+budget = st.sidebar.slider("Загальний бюджет", 1000, 200000, 50000, step=1000)
+flight_weeks = st.sidebar.slider("Тривалість флайту (тижні)", 1, 12, 4)
+audience_size = st.sidebar.number_input("Розмір аудиторії Digital (тис.)", min_value=1.0, value=1000.0)
+tv_cost_per_trp = st.sidebar.number_input("Вартість 1 TRP ТБ", value=500.0)
+dig_cost_per_imp = st.sidebar.number_input("Вартість 1 тис. імпресій Digital", value=5.0)
+tv_weekly_clutter = st.sidebar.number_input("Конкурентний тиск ТБ (ТРП/тиждень)", value=150.0)
+dig_weekly_clutter = st.sidebar.number_input("Конкурентний тиск Digital (тис. імпресій/тиждень)", value=300.0)
+n_options = st.sidebar.slider("Кількість варіантів сплітів", 5, 15, 10)
 
-# --- Введення даних ТБ ---
+# --- Expander для вводу ТБ ---
 with st.expander("Введіть 5 точок TRP → Reach % для ТБ"):
     tv_trp_points, tv_reach_points = [], []
     for i in range(5):
@@ -21,9 +30,8 @@ with st.expander("Введіть 5 точок TRP → Reach % для ТБ"):
         tv_trp_points.append(trp)
         tv_reach_points.append(reach/100)
 
-# --- Введення даних Digital ---
+# --- Expander для вводу Digital ---
 with st.expander("Введіть 5 точок TRP → Reach % для Digital"):
-    audience_size = st.number_input("Розмір аудиторії Digital (тис.)", min_value=1.0, value=1000.0)
     dig_trp_points, dig_reach_points = [], []
     for i in range(5):
         col1, col2 = st.columns(2)
@@ -36,37 +44,22 @@ with st.expander("Введіть 5 точок TRP → Reach % для Digital"):
 tv_spline = CubicSpline(tv_trp_points, tv_reach_points)
 dig_spline = CubicSpline(dig_trp_points, dig_reach_points)
 
-# --- Параметри бюджету ---
-st.subheader("Параметри бюджету та тривалості")
-budget = st.slider("Загальний бюджет", 1000, 200000, 50000, step=1000)
-flight_weeks = st.slider("Тривалість флайту (тижні)", 1, 12, 4)
-tv_cost_per_trp = st.number_input("Вартість 1 TRP ТБ", value=500.0)
-dig_cost_per_imp = st.number_input("Вартість 1 тис. імпресій Digital", value=5.0)
-tv_weekly_clutter = st.number_input("Конкурентний тиск ТБ (ТРП/тиждень)", value=150.0)
-dig_weekly_clutter = st.number_input("Конкурентний тиск Digital (тис. імпресій/тиждень)", value=300.0)
-n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
-
 # --- Генерація варіантів ---
 results = []
 for split in np.linspace(0.1, 0.9, n_options):
     tv_budget = budget * split
     dig_budget = budget * (1 - split)
-
     tv_trp = tv_budget / tv_cost_per_trp
     dig_imp = dig_budget / dig_cost_per_imp * 1000
     dig_trp = dig_imp / audience_size * 100
-
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
     dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))
     cross_reach = tv_reach + dig_reach - tv_reach*dig_reach
-
     tv_weekly = tv_trp / flight_weeks
     dig_weekly = dig_trp / flight_weeks
     overall_ok = (tv_weekly >= tv_weekly_clutter) & (dig_weekly >= dig_weekly_clutter)
-
     cpr = (tv_budget + dig_budget) / (cross_reach*100)
     cpt_dig = dig_budget / dig_trp
-
     results.append({
         "Спліт ТБ": f"{split*100:.0f}%",
         "Бюджет ТБ": int(tv_budget),
@@ -83,14 +76,13 @@ for split in np.linspace(0.1, 0.9, n_options):
         "CPT_Digital": round(cpt_dig,2),
         "Ефективний": overall_ok
     })
-
 df = pd.DataFrame(results)
 
 # --- Найкращий варіант ---
 best_idx = df[df["Ефективний"]]["CPR"].idxmin() if df[df["Ефективний"]].shape[0]>0 else df["CPR"].idxmin()
 best_option = df.loc[best_idx]
 
-# --- Вивід карток ---
+# --- Картки ---
 st.subheader("🏆 Найкращий варіант спліту")
 col1, col2, col3 = st.columns(3)
 col1.metric("Найнижчий CPR", f"{best_option['CPR']:.2f}")
@@ -108,8 +100,8 @@ st.dataframe(df.style.apply(highlight, axis=1))
 
 # --- Plotly графіки ---
 st.subheader("📊 Розподіл бюджету по сплітах")
-fig_budget = px.bar(df, x="Спліт ТБ", y=["Бюджет ТБ","Бюджет Digital"], 
-                    title="Розподіл бюджету (stacked)", barmode="stack")
+fig_budget = px.bar(df, x="Спліт ТБ", y=["Бюджет ТБ","Бюджет Digital"], barmode="stack",
+                    title="Розподіл бюджету (stacked)")
 st.plotly_chart(fig_budget, use_container_width=True)
 
 st.subheader("📈 Охоплення по всіх варіантах")
@@ -118,7 +110,7 @@ fig_reach = px.line(df, x="Спліт ТБ", y=["Reach_TV %","Reach_Digital %","
 st.plotly_chart(fig_reach, use_container_width=True)
 
 # --- Excel download ---
-st.subheader("⬇️ Завантаження Excel з графіками")
+st.subheader("⬇️ Завантаження Excel")
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="Splits")
@@ -129,4 +121,5 @@ st.download_button(
     file_name="media_split_modern.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
 
