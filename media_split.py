@@ -172,8 +172,7 @@ if cpr_col:
             for col in range(1, ws.max_column+1):
                 ws.cell(row=row, column=col).fill = fill
 
-# --- Створення графіків в стилі інтерфейсу ---
-# 1. Stacked Bar Budget
+# --- Створення одного стовпчика з долями ---
 bar_chart = BarChart()
 bar_chart.type = "col"
 bar_chart.grouping = "stacked"
@@ -186,7 +185,6 @@ data = Reference(ws, min_col=ws.max_column-1, min_row=1, max_col=ws.max_column, 
 cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
 bar_chart.add_data(data, titles_from_data=True)
 bar_chart.set_categories(cats)
-
 bar_chart.ser[0].graphicalProperties = GraphicalProperties(solidFill="000000")  # ТБ чорний
 bar_chart.ser[1].graphicalProperties = GraphicalProperties(solidFill="FF0000")  # Digital червоний
 ws.add_chart(bar_chart, "O2")
@@ -200,7 +198,6 @@ line_chart.x_axis.title = "Опції"
 data2 = Reference(ws, min_col=8, min_row=1, max_col=10, max_row=ws.max_row)
 line_chart.add_data(data2, titles_from_data=True)
 line_chart.set_categories(cats)
-
 line_chart.ser[0].graphicalProperties = GraphicalProperties(solidFill="000000")  # ТБ чорний
 line_chart.ser[1].graphicalProperties = GraphicalProperties(solidFill="FF0000")  # Digital червоний
 line_chart.ser[2].graphicalProperties = GraphicalProperties(solidFill="0000FF")  # Cross синій
@@ -209,7 +206,6 @@ for s in line_chart.ser:
     s.marker.size = 6
 ws.add_chart(line_chart, "O20")
 
-# --- Скачування ---
 wb.save(output)
 output.seek(0)
 st.download_button(
@@ -218,6 +214,7 @@ st.download_button(
     file_name="media_split_with_charts.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
 
 
 
