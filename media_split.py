@@ -23,19 +23,21 @@ with st.sidebar:
     split_step_percent = st.selectbox("Крок спліту (%)", [5, 10, 15, 20])
     n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
 
-# --- Встановлені TRP→Reach точки для ТБ і Digital ---
-def input_spline(name):
-    st.subheader(f"{name} (5 точок для естимації)")
-    if name=="ТБ":
-        trp_points = [50, 100, 150, 200, 250]
-        reach_points = [20, 35, 50, 65, 75]  # % 
-    else:
-        trp_points = [10, 50, 100, 200, 400]
-        reach_points = [10, 25, 40, 60, 80]  # % 
-    return CubicSpline(trp_points, [r/100 for r in reach_points])
+# --- Введення 5 точок TRP→Reach для ТБ і Digital ---
+def input_points(media_name):
+    st.subheader(f"{media_name} — Введіть 5 точок TRP → Reach (%)")
+    trp_points = []
+    reach_points = []
+    for i in range(5):
+        cols = st.columns(2)
+        trp = cols[0].number_input(f"{media_name} TRP точка {i+1}", min_value=0.0, max_value=1000.0, value=50.0*(i+1))
+        reach = cols[1].number_input(f"{media_name} Reach % точка {i+1}", min_value=0.0, max_value=100.0, value=20.0*(i+1))
+        trp_points.append(trp)
+        reach_points.append(reach/100)
+    return CubicSpline(trp_points, reach_points)
 
-tv_spline = input_spline("ТБ")
-dig_spline = input_spline("Digital")
+tv_spline = input_points("ТБ")
+dig_spline = input_points("Digital")
 
 # --- Генерація сплітів ---
 split_step = split_step_percent / 100.0
