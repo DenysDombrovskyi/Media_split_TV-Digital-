@@ -9,10 +9,25 @@ from openpyxl import Workbook
 st.set_page_config(page_title="Media Split Optimizer", layout="wide")
 st.title("📊 Сучасний медіа-спліт ТБ + Digital")
 
-# --- Sidebar для ключових параметрів ---
+# --- Sidebar з розширеними повзунками ---
 st.sidebar.header("Основні параметри")
-budget = st.sidebar.slider("Загальний бюджет", 1000, 200000, 50000, step=1000)
-flight_weeks = st.sidebar.slider("Тривалість флайту (тижні)", 1, 12, 4)
+
+budget = st.sidebar.slider(
+    "Загальний бюджет",
+    min_value=100_000,        # мінімум 100 000
+    max_value=50_000_000,     # максимум 50 000 000
+    value=5_000_000,          # початкове значення
+    step=100_000              # крок 100 000
+)
+
+flight_weeks = st.sidebar.slider(
+    "Тривалість флайту (тижні)",
+    min_value=1,
+    max_value=30,
+    value=4,
+    step=1
+)
+
 audience_size = st.sidebar.number_input("Розмір аудиторії Digital (тис.)", min_value=1.0, value=1000.0)
 tv_cost_per_trp = st.sidebar.number_input("Вартість 1 TRP ТБ", value=500.0)
 dig_cost_per_imp = st.sidebar.number_input("Вартість 1 тис. імпресій Digital", value=5.0)
