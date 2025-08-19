@@ -9,8 +9,8 @@ from openpyxl.chart import BarChart, Reference
 
 st.title("📊 Оптимальний спліт ТБ + Digital з CPR і графіком Excel")
 
-# --- Введення точок охоплення ---
-st.subheader("1️⃣ Введіть 5 точок TRP → Reach % для ТБ")
+# --- 1️⃣ Введення точок охоплення ---
+st.subheader("Введіть 5 точок TRP → Reach % для ТБ")
 tv_trp_points, tv_reach_points = [], []
 for i in range(5):
     col1, col2 = st.columns(2)
@@ -19,7 +19,7 @@ for i in range(5):
     tv_trp_points.append(trp)
     tv_reach_points.append(reach/100)
 
-st.subheader("2️⃣ Введіть 5 точок Impressions → Reach % для Digital")
+st.subheader("Введіть 5 точок Impressions → Reach % для Digital")
 dig_imp_points, dig_reach_points = [], []
 for i in range(5):
     col1, col2 = st.columns(2)
@@ -33,7 +33,7 @@ tv_spline = CubicSpline(tv_trp_points, tv_reach_points)
 dig_spline = CubicSpline(dig_imp_points, dig_reach_points)
 
 # --- Параметри бюджету та тривалості ---
-st.subheader("3️⃣ Параметри бюджету та тривалості")
+st.subheader("Параметри бюджету та тривалості")
 budget = st.number_input("Загальний бюджет", min_value=1000, step=1000, value=50000)
 flight_weeks = st.number_input("Тривалість флайту (тижні)", min_value=1, value=4)
 tv_cost_per_trp = st.number_input("Вартість 1 TRP в ТБ", value=500.0)
@@ -94,32 +94,42 @@ if df[df["Тиск_ок"]].shape[0] > 0:
 else:
     min_cpr_idx = None
 
-# --- Підсвітка ---
+# --- Підсвітка таблиці ---
 def highlight(row):
     if row.name == min_cpr_idx:
         return ["background-color: deepskyblue"]*len(row)
     color = "background-color: lightgreen" if row["Ефективний"] else "background-color: lightcoral"
     return [color]*len(row)
 
-st.subheader("📑 Результати")
+st.subheader("Результати сплітів")
 st.dataframe(df.style.apply(highlight, axis=1))
 
-# --- Графік ---
-st.subheader("📈 Кросмедійне охоплення")
-fig, ax = plt.subplots()
-cross_values = df["Cross_Reach %"]
-colors = []
-for i,row in df.iterrows():
-    if i == min_cpr_idx:
-        colors.append("deepskyblue")
-    else:
-        colors.append("green" if row["Ефективний"] else "red")
-ax.scatter(df["Спліт ТБ"], cross_values, c=colors, s=100)
-ax.set_ylabel("Кросмедійне охоплення %")
-ax.set_xlabel("Спліт ТБ")
-ax.set_title("Кросмедійне охоплення залежно від спліта")
+# --- 1️⃣ Гістограма бюджету ---
+st.subheader("📊 Розподіл бюджету по варіантах спліту")
+fig, ax = plt.subplots(figsize=(10,5))
+width = 0.35
+x = np.arange(len(df))
+ax.bar(x - width/2, df["Бюджет ТБ"], width, label="ТБ")
+ax.bar(x + width/2, df["Бюджет Digital"], width, label="Digital")
+ax.set_xticks(x)
+ax.set_xticklabels(df["Спліт ТБ"])
+ax.set_ylabel("Бюджет")
+ax.set_title("Розподіл бюджету по сплітах")
+ax.legend()
 plt.xticks(rotation=45)
 st.pyplot(fig)
+
+# --- 2️⃣ Лінійний графік охоплення ---
+st.subheader("📈 Охоплення по всіх варіантах спліту")
+fig2, ax2 = plt.subplots(figsize=(10,5))
+ax2.plot(df["Спліт ТБ"], df["Reach_TV %"], marker='o', label="Reach_TV %")
+ax2.plot(df["Спліт ТБ"], df["Reach_Digital %"], marker='o', label="Reach_Digital %")
+ax2.plot(df["Спліт ТБ"], df["Cross_Reach %"], marker='o', label="Cross_Reach %")
+ax2.set_ylabel("Охоплення %")
+ax2.set_title("Охоплення по всіх варіантах сплітів")
+ax2.legend()
+plt.xticks(rotation=45)
+st.pyplot(fig2)
 
 # --- Експорт Excel з графіком ---
 st.subheader("⬇️ Завантаження Excel з графіком")
