@@ -11,10 +11,10 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.chart.shapes import GraphicalProperties
 
 # --- Налаштування сторінки ---
-st.set_page_config(page_title="Media Split Optimizer", layout="wide")
-st.title("🎯 Media Split Optimizer — ТБ + Digital")
+st.set_page_config(page_title="Media Split Dashboard", layout="wide")
+st.title("🎯 Media Split Dashboard — ТБ + Digital")
 
-# --- Sidebar параметри ---
+# --- Sidebar контролери ---
 with st.sidebar:
     st.header("Параметри кампанії")
     budget = st.slider("Загальний бюджет (₴)", 100_000, 50_000_000, 5_000_000, step=100_000)
@@ -148,70 +148,40 @@ def highlight_rows(row):
         return ['background-color: salmon']*len(row)
 st.dataframe(df.style.apply(highlight_rows, axis=1))
 
-# --- Excel з графіками ---
-st.subheader("⬇️ Завантаження Excel з графіками")
-output = io.BytesIO()
-wb = Workbook()
-ws = wb.active
-ws.title = "Splits"
+# --- Експорт в Excel ---
+def to_excel(df, fig_budget, fig_reach):
+    output = io.BytesIO()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Results"
+    for r in dataframe_to_rows(df, index=False, header=True):
+        ws.append(r)
+    
+    # --- Створимо графіки ---
+    # Stacked Bar — Долі бюджету
+    chart1 = BarChart()
+    chart1.title = "Долі бюджету по медіа"
+    data = Reference(ws, min_col=ws.max_column-1, max_col=ws.max_column, min_row=1, max_row=ws.max_row)
+    cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
+    chart1.add_data(data, titles_from_data=True)
+    chart1.set_categories(cats)
+    ws.add_chart(chart1, "P5")
+    
+    # Line — Reach
+    chart2 = LineChart()
+    chart2.title = "Reach TV / Digital / Cross"
+    data2 = Reference(ws, min_col=8, max_col=10, min_row=1, max_row=ws.max_row)
+    chart2.add_data(data2, titles_from_data=True)
+    chart2.set_categories(cats)
+    ws.add_chart(chart2, "P20")
+    
+    wb.save(output)
+    return output
 
-for r in dataframe_to_rows(df, index=False, header=True):
-    ws.append(r)
-
-# Виділення найкращого CPR
-cpr_col = None
-for i, cell in enumerate(ws[1], start=1):
-    if cell.value == "CPR":
-        cpr_col = i
-        break
-if cpr_col:
-    min_cpr = min(df["CPR"])
-    fill = PatternFill(start_color="00FFFF00", end_color="00FFFF00", fill_type="solid")
-    for row in range(2, ws.max_row+1):
-        if ws.cell(row=row, column=cpr_col).value == min_cpr:
-            for col in range(1, ws.max_column+1):
-                ws.cell(row=row, column=col).fill = fill
-
-# --- Створення одного стовпчика з долями ---
-bar_chart = BarChart()
-bar_chart.type = "col"
-bar_chart.grouping = "stacked"
-bar_chart.style = 10
-bar_chart.title = "Долі бюджету по медіа"
-bar_chart.y_axis.title = "Доля %"
-bar_chart.x_axis.title = "Опції"
-
-data = Reference(ws, min_col=ws.max_column-1, min_row=1, max_col=ws.max_column, max_row=ws.max_row)
-cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
-bar_chart.add_data(data, titles_from_data=True)
-bar_chart.set_categories(cats)
-bar_chart.ser[0].graphicalProperties = GraphicalProperties(solidFill="000000")  # ТБ чорний
-bar_chart.ser[1].graphicalProperties = GraphicalProperties(solidFill="FF0000")  # Digital червоний
-ws.add_chart(bar_chart, "O2")
-
-# 2. Line Chart Reach
-line_chart = LineChart()
-line_chart.title = "Reach TV / Digital / Cross"
-line_chart.y_axis.title = "Reach %"
-line_chart.x_axis.title = "Опції"
-
-data2 = Reference(ws, min_col=8, min_row=1, max_col=10, max_row=ws.max_row)
-line_chart.add_data(data2, titles_from_data=True)
-line_chart.set_categories(cats)
-line_chart.ser[0].graphicalProperties = GraphicalProperties(solidFill="000000")  # ТБ чорний
-line_chart.ser[1].graphicalProperties = GraphicalProperties(solidFill="FF0000")  # Digital червоний
-line_chart.ser[2].graphicalProperties = GraphicalProperties(solidFill="0000FF")  # Cross синій
-for s in line_chart.ser:
-    s.marker.symbol = "circle"
-    s.marker.size = 6
-ws.add_chart(line_chart, "O20")
-
-wb.save(output)
-output.seek(0)
 st.download_button(
-    label="Скачати Excel з графіками",
-    data=output,
-    file_name="media_split_with_charts.xlsx",
+    label="⬇️ Завантажити результати в Excel",
+    data=to_excel(df, fig_budget, fig_reach),
+    file_name="media_split_results.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
