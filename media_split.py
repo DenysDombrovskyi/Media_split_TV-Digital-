@@ -104,12 +104,18 @@ digital_est = estimate_reach(digital_points, 99, est_method)
 options = []
 # Генерація опцій розподілу бюджету
 for i in range(num_options):
-    # Розрахунок долі бюджету для поточної опції
-    budget_share = (i + 1) * split_step / 100
+    # Розрахунок відсотка бюджету, виділеного на ТБ для поточної опції
+    # Розподіл від 0% до (num_options-1)*split_step, але не більше 100%
+    tb_percent_of_budget = min(i * split_step, 100)
+    digital_percent_of_budget = 100 - tb_percent_of_budget
+
+    # Розрахунок бюджету, виділеного на кожен канал
+    tb_budget_allocated = budget * (tb_percent_of_budget / 100)
+    digital_budget_allocated = budget * (digital_percent_of_budget / 100)
     
     # Розрахунок TRP ТБ та Impressions Діджитал
-    tb_trp = budget_share * (budget / tb_price)
-    digital_imp = budget_share * (budget / digital_price)
+    tb_trp = tb_budget_allocated / tb_price
+    digital_imp = digital_budget_allocated / digital_price
 
     # Розрахунок охоплення для ТБ та Діджитал
     tb_reach = tb_est(tb_trp)
@@ -125,7 +131,9 @@ for i in range(num_options):
         "TB Reach %": tb_reach,
         "Digital IMP (тис)": digital_imp,
         "Digital Reach %": digital_reach,
-        "CrossMedia Reach %": cross_reach*100
+        "CrossMedia Reach %": cross_reach*100,
+        "TB % Budget": tb_percent_of_budget,  # Додано для відображення в таблиці
+        "Digital % Budget": digital_percent_of_budget # Додано для відображення в таблиці
     })
 
 df = pd.DataFrame(options)
@@ -203,17 +211,17 @@ st.markdown("---")
 fig = go.Figure()
 fig.add_trace(go.Bar(
     x=df["Опція"],
-    y=(df["TB TRP"]*tb_price)/(budget),
+    y=df["TB % Budget"], # Використовуємо відсоток бюджету ТБ
     name="ТБ",
     marker_color='black'
 ))
 fig.add_trace(go.Bar(
     x=df["Опція"],
-    y=(df["Digital IMP (тис)"]*digital_price)/(budget),
+    y=df["Digital % Budget"], # Використовуємо відсоток бюджету Діджитал
     name="Діджитал",
     marker_color='red'
 ))
-fig.update_layout(barmode='stack', title="Розподіл бюджету (долі)", xaxis_title="Опції", yaxis_title="Доля бюджету")
+fig.update_layout(barmode='stack', title="Розподіл бюджету (%)", xaxis_title="Опції", yaxis_title="Відсоток бюджету")
 st.plotly_chart(fig)
 
 # Графік охоплення по опціях
@@ -228,28 +236,5 @@ st.plotly_chart(fig2)
 output = BytesIO()
 with pd.ExcelWriter(output, engine='openpyxl') as writer: # Змінено рушій на 'openpyxl'
     df.to_excel(writer, index=False, sheet_name="Options")
-    workbook  = writer.book
-    worksheet = writer.sheets["Options"]
-
-    # Create charts in Excel
-    # Графік розподілу бюджету
-    chart = workbook.add_chart({'type': 'column', 'subtype': 'stacked'})
-    # Додаємо серії даних для ТБ та Діджитал
-    chart.add_series({
-        'name': 'ТБ',
-        'categories': f'=Options!$A$2:$A${num_options+1}',
-        'values': f'=Options!$B$2:$B${num_options+1}',
-        'fill': {'color': 'black'}
-    })
-    chart.add_series({
-        'name': 'Діджитал',
-        'categories': f'=Options!$A$2:$A${num_options+1}',
-        'values': f'=Options!$D$2:$D${num_options+1}',
-        'fill': {'color': 'red'}
-    })
-    chart.set_title({'name': 'Розподіл бюджету'})
-    chart.set_y_axis({'name': 'Доля бюджету'})
-    worksheet.insert_chart('H2', chart) # Розміщення графіку в Excel
-
-    # writer.save() # Цей рядок був видалений, оскільки 'with' оператор автоматично зберігає та закриває
+    # Код для створення діаграм у Excel було видалено, щоб уникнути помилок з xlsxwriter
 st.download_button("⬇️ Завантажити результати в Excel", data=output.getvalue(), file_name="media_split.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
