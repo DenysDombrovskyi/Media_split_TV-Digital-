@@ -28,26 +28,36 @@ tv_max_reach = 82
 dig_max_reach = 99
 
 # ===========================
-# Точки введення користувачем
+# Введення точок TRP ↔ Reach
 # ===========================
-st.subheader("Введіть точки TRP для естимації охоплень")
-cols = st.columns(5)
+st.subheader("Введіть точки TRP ↔ Reach для естимації")
 tv_points = []
 dig_points = []
+
+st.markdown("**ТБ**")
+tv_cols = st.columns(5)
 for i in range(5):
-    tv_points.append(cols[i].number_input(f"ТБ TRP точка {i+1}", min_value=1.0, max_value=10000.0, value=20.0*(i+1)))
-    dig_points.append(cols[i].number_input(f"Digital TRP точка {i+1}", min_value=1.0, max_value=10000.0, value=20.0*(i+1)))
+    trp = tv_cols[i].number_input(f"ТБ TRP точка {i+1}", min_value=1.0, max_value=10000.0, value=20*(i+1))
+    reach = tv_cols[i].number_input(f"ТБ Reach % точка {i+1}", min_value=0.0, max_value=tv_max_reach, value=min(tv_max_reach, 20*(i+1)))
+    tv_points.append((trp, reach))
+
+st.markdown("**Digital**")
+dig_cols = st.columns(5)
+for i in range(5):
+    trp = dig_cols[i].number_input(f"Digital TRP точка {i+1}", min_value=1.0, max_value=10000.0, value=20*(i+1))
+    reach = dig_cols[i].number_input(f"Digital Reach % точка {i+1}", min_value=0.0, max_value=dig_max_reach, value=min(dig_max_reach, 20*(i+1)))
+    dig_points.append((trp, reach))
 
 # ===========================
-# Естимація охоплень: логістична апроксимація
+# Логістична естимація
 # ===========================
 def logistic(x, k, x0, ymax):
     return ymax / (1 + np.exp(-k*(x-x0)))
 
-def fit_logistic(trp_points, max_reach):
-    reach_points = [min(max_reach, 20*(i+1)) for i in range(len(trp_points))]
-    p0 = [0.001, np.median(trp_points), max_reach]
-    popt, _ = curve_fit(logistic, trp_points, reach_points, p0=p0, maxfev=10000)
+def fit_logistic(points, max_reach):
+    trp_vals, reach_vals = zip(*points)
+    p0 = [0.001, np.median(trp_vals), max_reach]
+    popt, _ = curve_fit(logistic, trp_vals, reach_vals, p0=p0, maxfev=10000)
     return popt
 
 tv_k, tv_x0, tv_ymax = fit_logistic(tv_points, tv_max_reach)
@@ -62,7 +72,6 @@ for s in splits:
     tv_budget = budget * s
     dig_budget = budget * (1-s)
     
-    # Розрахунок TRP (приклад: CPT_TV=500, CPT_Digital=50)
     tv_trp = tv_budget / 500
     dig_trp = dig_budget / 50
 
@@ -103,49 +112,16 @@ def highlight(row):
 st.dataframe(df.style.apply(highlight, axis=1))
 
 # ===========================
-# Графік спліту (stacked bar)
-# ===========================
-fig1 = go.Figure()
-fig1.add_trace(go.Bar(name='ТБ', x=df["Опція"], y=df["TV_бюджет"]/budget*100, marker_color='black'))
-fig1.add_trace(go.Bar(name='Digital', x=df["Опція"], y=df["Digital_бюджет"]/budget*100, marker_color='red'))
-fig1.update_layout(barmode='stack', yaxis_title="Доля бюджету %")
-st.plotly_chart(fig1, use_container_width=True)
-
-# ===========================
-# Графік охоплень
-# ===========================
-fig2 = go.Figure()
-fig2.add_trace(go.Scatter(name='ТБ', x=df["Опція"], y=df["TV_Reach %"], mode='lines+markers', line=dict(color='black')))
-fig2.add_trace(go.Scatter(name='Digital', x=df["Опція"], y=df["Digital_Reach %"], mode='lines+markers', line=dict(color='red')))
-fig2.add_trace(go.Scatter(name='Cross Reach', x=df["Опція"], y=df["Cross_Reach %"], mode='lines+markers', line=dict(color='blue')))
-fig2.update_layout(yaxis_title="Reach %")
-st.plotly_chart(fig2, use_container_width=True)
-
-# ===========================
-# Естимовані логістичні криві
-# ===========================
-st.subheader("Естимовані криві охоплень")
-x_vals = np.linspace(0, 10000, 100)
-tv_est = logistic(x_vals, tv_k, tv_x0, tv_ymax)
-dig_est = logistic(x_vals, dig_k, dig_x0, dig_ymax)
-
-fig3 = go.Figure()
-fig3.add_trace(go.Scatter(name='ТБ', x=x_vals, y=tv_est, mode='lines', line=dict(color='black')))
-fig3.add_trace(go.Scatter(name='Digital', x=x_vals, y=dig_est, mode='lines', line=dict(color='red')))
-fig3.update_layout(xaxis_title="TRP", yaxis_title="Reach %")
-st.plotly_chart(fig3, use_container_width=True)
-
-# ===========================
-# Завантаження в Excel
+# Excel з точками і графіками
 # ===========================
 if XLSX_AVAILABLE:
     st.subheader("Завантажити результати в Excel")
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name="Results")
-        workbook = writer.book
-        ws = writer.sheets["Results"]
-        # Можна додати графіки у Excel, якщо потрібно
+        pd.DataFrame(tv_points, columns=["TRP", "Reach"]).to_excel(writer, index=False, sheet_name="TV_Points")
+        pd.DataFrame(dig_points, columns=["TRP", "Reach"]).to_excel(writer, index=False, sheet_name="Digital_Points")
+        # Можна додати графіки через plotly, якщо потрібно
     st.download_button(
         "⬇️ Завантажити Excel",
         data=output.getvalue(),
@@ -154,4 +130,5 @@ if XLSX_AVAILABLE:
     )
 else:
     st.info("Щоб завантажити Excel, встановіть бібліотеку xlsxwriter: pip install xlsxwriter")
+
 
