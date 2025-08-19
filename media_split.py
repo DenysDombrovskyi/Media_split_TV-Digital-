@@ -14,10 +14,10 @@ st.sidebar.header("Основні параметри")
 
 budget = st.sidebar.slider(
     "Загальний бюджет",
-    min_value=100_000,        # мінімум 100 000
-    max_value=50_000_000,     # максимум 50 000 000
-    value=5_000_000,          # початкове значення
-    step=100_000              # крок 100 000
+    min_value=100_000,
+    max_value=50_000_000,
+    value=5_000_000,
+    step=100_000
 )
 
 flight_weeks = st.sidebar.slider(
@@ -66,7 +66,7 @@ for split in np.linspace(0.1, 0.9, n_options):
     dig_budget = budget * (1 - split)
     tv_trp = tv_budget / tv_cost_per_trp
     dig_imp = dig_budget / dig_cost_per_imp * 1000
-    dig_trp = dig_imp / audience_size * 100
+    dig_trp = dig_imp / audience_size * 100  # TRP Digital без обмеження
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
     dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))
     cross_reach = tv_reach + dig_reach - tv_reach*dig_reach
