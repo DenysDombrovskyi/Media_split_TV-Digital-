@@ -7,6 +7,7 @@ import io
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 from openpyxl.chart import BarChart, LineChart, Reference, Series
+from openpyxl.utils.dataframe import dataframe_to_rows  # <- Важливо!
 
 # --- Налаштування сторінки ---
 st.set_page_config(page_title="Media Split Optimizer", layout="wide")
