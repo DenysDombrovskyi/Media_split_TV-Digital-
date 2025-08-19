@@ -6,7 +6,6 @@ import plotly.express as px
 import io
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.chart import BarChart, LineChart, Reference
 
 st.set_page_config(page_title="Media Split Dashboard", layout="wide")
 st.title("🎯 Media Split Dashboard — ТБ + Digital")
@@ -24,17 +23,16 @@ with st.sidebar:
     split_step_percent = st.selectbox("Крок спліту (%)", [5, 10, 15, 20])
     n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
 
-# --- Вводимо TRP→Reach для ТБ та Digital (5 точок) ---
+# --- Встановлені TRP→Reach точки для ТБ і Digital ---
 def input_spline(name):
-    trp_points, reach_points = [], []
-    st.subheader(f"{name} (5 точок)")
-    for i in range(5):
-        col1, col2 = st.columns(2)
-        trp = col1.slider(f"{name} TRP, точка {i+1}", 0.0, 500.0, float(i*50+50))
-        reach = col2.slider(f"{name} Reach %, точка {i+1}", 0.0, 100.0, float(i*10+20))
-        trp_points.append(trp)
-        reach_points.append(reach/100)
-    return CubicSpline(trp_points, reach_points)
+    st.subheader(f"{name} (5 точок для естимації)")
+    if name=="ТБ":
+        trp_points = [50, 100, 150, 200, 250]
+        reach_points = [20, 35, 50, 65, 75]  # % 
+    else:
+        trp_points = [10, 50, 100, 200, 400]
+        reach_points = [10, 25, 40, 60, 80]  # % 
+    return CubicSpline(trp_points, [r/100 for r in reach_points])
 
 tv_spline = input_spline("ТБ")
 dig_spline = input_spline("Digital")
@@ -95,7 +93,11 @@ df['Доля Digital %'] = df['Бюджет Digital'] / (df['Бюджет ТБ']
 if budget_warning:
     st.warning(f"⚠️ Мінімальний бюджет для досягнення конкурентного тиску: {int(min_needed_budget):,} ₴")
 
-best_idx = df[df["Ефективний"]]["CPR"].idxmin() if df[df["Ефективний"]].any() else df["CPR"].idxmin()
+# --- Визначення найкращої опції ---
+if df["Ефективний"].any():
+    best_idx = df[df["Ефективний"]]["CPR"].idxmin()
+else:
+    best_idx = df["CPR"].idxmin()
 best_option = df.loc[best_idx]
 
 # --- KPI ---
@@ -150,5 +152,6 @@ st.download_button(
     file_name="media_split_results.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
 
 
