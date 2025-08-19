@@ -17,9 +17,10 @@ tv_cost_per_trp = st.sidebar.number_input("Вартість 1 TRP ТБ", value=5
 dig_cost_per_imp = st.sidebar.number_input("Вартість 1 тис. імпресій Digital", value=5.0)
 tv_weekly_clutter = st.sidebar.number_input("Конкурентний тиск ТБ (ТРП/тиждень)", value=150.0)
 dig_weekly_clutter = st.sidebar.number_input("Конкурентний тиск Digital (TRP/тиждень)", value=300.0)
-n_options = st.sidebar.slider("Кількість варіантів сплітів", 5, 15, 10)
+split_step_percent = st.sidebar.selectbox("Крок спліту ТБ (%)", [5, 10, 15, 20])
+n_options = st.sidebar.slider("Макс. кількість варіантів сплітів", 5, 15, 10)
 
-# --- Expander TRP → Reach для ТБ ---
+# --- TRP → Reach для ТБ ---
 with st.expander("Введіть 5 точок TRP → Reach % для ТБ"):
     tv_trp_points, tv_reach_points = [], []
     for i in range(5):
@@ -29,7 +30,7 @@ with st.expander("Введіть 5 точок TRP → Reach % для ТБ"):
         tv_trp_points.append(trp)
         tv_reach_points.append(reach/100)
 
-# --- Expander TRP → Reach для Digital ---
+# --- TRP → Reach для Digital ---
 with st.expander("Введіть 5 точок TRP → Reach % для Digital"):
     dig_trp_points, dig_reach_points = [], []
     for i in range(5):
@@ -44,31 +45,27 @@ tv_spline = CubicSpline(tv_trp_points, tv_reach_points)
 dig_spline = CubicSpline(dig_trp_points, dig_reach_points)
 
 # --- Генерація варіантів ---
+split_step = split_step_percent / 100.0
+split_values = np.arange(0.1, 0.91, split_step)
 results = []
 budget_warning = False
 min_needed_budget = 0
 
-for split in np.linspace(0.1, 0.9, n_options):
+for i, split in enumerate(split_values, start=1):
     tv_budget = budget * split
     dig_budget = budget * (1 - split)
     
-    # TRP ТБ
     tv_trp = tv_budget / tv_cost_per_trp
+    dig_imp = dig_budget / dig_cost_per_imp
+    dig_trp = dig_imp / audience_size * 100
     
-    # Digital TRP
-    dig_imp = dig_budget / dig_cost_per_imp       # тис. імпресій
-    dig_trp = dig_imp / audience_size * 100       # TRP %
-    
-    # Reach
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
     dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))
     cross_reach = tv_reach + dig_reach - tv_reach*dig_reach
     
-    # Тижневий тиск
     tv_weekly = tv_trp / flight_weeks
     dig_weekly = dig_trp / flight_weeks
     
-    # Перевірка бюджетної ефективності
     overall_ok = (tv_weekly >= tv_weekly_clutter) & (dig_weekly >= dig_weekly_clutter)
     if not overall_ok:
         budget_warning = True
@@ -76,11 +73,11 @@ for split in np.linspace(0.1, 0.9, n_options):
         min_dig_budget = dig_weekly_clutter * flight_weeks * dig_cost_per_imp * audience_size / 100
         min_needed_budget = max(min_needed_budget, min_tv_budget + min_dig_budget)
     
-    # CPR / CPT
     cpr = (tv_budget + dig_budget) / (cross_reach*100)
     cpt_dig = dig_budget / dig_trp
     
     results.append({
+        "Опція": f"Опція {i}",
         "Спліт ТБ": f"{split*100:.0f}%",
         "Бюджет ТБ": int(tv_budget),
         "Бюджет Digital": int(dig_budget),
@@ -98,23 +95,24 @@ for split in np.linspace(0.1, 0.9, n_options):
     })
 
 df = pd.DataFrame(results)
+df['Доля ТБ %'] = df['Бюджет ТБ'] / (df['Бюджет ТБ'] + df['Бюджет Digital']) * 100
+df['Доля Digital %'] = df['Бюджет Digital'] / (df['Бюджет ТБ'] + df['Бюджет Digital']) * 100
 
-# --- Попередження при недостатньому бюджеті ---
+# --- Попередження ---
 if budget_warning:
-    st.warning(f"⚠️ Для досягнення конкурентного тиску потрібно щонайменше {int(min_needed_budget):,} грн. Можна збільшити бюджет або скоротити тривалість флайту.")
+    st.warning(f"⚠️ Для досягнення конкурентного тиску потрібно щонайменше {int(min_needed_budget):,} грн. "
+               "Можна збільшити бюджет або скоротити тривалість флайту.")
 
-# --- Найкращий варіант ---
 best_idx = df[df["Ефективний"]]["CPR"].idxmin() if df[df["Ефективний"]].shape[0]>0 else df["CPR"].idxmin()
 best_option = df.loc[best_idx]
 
-# --- Картки ---
 st.subheader("🏆 Найкращий варіант спліту")
 col1, col2, col3 = st.columns(3)
 col1.metric("Найнижчий CPR", f"{best_option['CPR']:.2f}")
 col2.metric("Cross Reach %", f"{best_option['Cross_Reach %']:.1f}%")
 col3.metric("TRP Digital", f"{best_option['TRP_Digital']:.1f}")
 
-# --- HTML таблиця з підсвіткою ---
+# --- Таблиця ---
 def render_colored_table(df, best_idx):
     def color_row(row):
         if row.name == best_idx:
@@ -123,29 +121,29 @@ def render_colored_table(df, best_idx):
             return 'background-color: lightgreen'
         else:
             return 'background-color: lightcoral'
-
     html = "<table style='border-collapse: collapse; width: 100%;'>"
     html += "<tr>" + "".join([f"<th style='border: 1px solid black; padding: 5px;'>{c}</th>" for c in df.columns]) + "</tr>"
-
     for idx, row in df.iterrows():
         color = color_row(row)
         html += "<tr>" + "".join([f"<td style='border: 1px solid black; padding: 5px; {color}'>{v}</td>" for v in row]) + "</tr>"
-
     html += "</table>"
     return html
-
-st.subheader("Результати всіх варіантів")
+st.subheader("Результати всіх опцій")
 st.markdown(render_colored_table(df, best_idx), unsafe_allow_html=True)
 
-# --- Plotly графіки ---
-st.subheader("📊 Розподіл бюджету по сплітах")
-fig_budget = px.bar(df, x="Спліт ТБ", y=["Бюджет ТБ","Бюджет Digital"], barmode="stack",
-                    title="Розподіл бюджету (stacked)")
+# --- Графіки ---
+st.subheader("📊 Долі бюджету по опціях")
+df['Color'] = ['deepskyblue' if i==best_idx else 'lightgreen' if v else 'lightcoral' 
+               for i,v in zip(df.index, df["Ефективний"])]
+fig_budget = px.bar(df, x="Опція", y=["Доля ТБ %","Доля Digital %"], barmode="stack",
+                    title="Долі бюджету по сплітах (stacked)", color=df['Color'])
+fig_budget.update_yaxes(title_text="Доля бюджету %")
 st.plotly_chart(fig_budget, use_container_width=True)
 
-st.subheader("📈 Охоплення по всіх варіантах")
-fig_reach = px.line(df, x="Спліт ТБ", y=["Reach_TV %","Reach_Digital %","Cross_Reach %"],
-                    markers=True, title="Reach TV/Digital/Cross")
+st.subheader("📈 Охоплення по всіх опціях")
+colors = ['deepskyblue' if i==best_idx else 'lightgreen' for i in df.index]
+fig_reach = px.line(df, x="Опція", y=["Reach_TV %","Reach_Digital %","Cross_Reach %"],
+                    markers=True, title="Reach TV/Digital/Cross", color_discrete_sequence=colors)
 st.plotly_chart(fig_reach, use_container_width=True)
 
 # --- Excel download ---
@@ -160,5 +158,6 @@ st.download_button(
     file_name="media_split_modern.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
 
 
