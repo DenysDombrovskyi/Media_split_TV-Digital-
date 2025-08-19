@@ -52,7 +52,7 @@ digital_points = []
 # Збір точок для Діджитал (Імпр. та Охоплення %)
 for i in range(5):
     col1, col2 = st.columns(2)
-    imp = col1.number_input(f"Імпр. точка {i+1} Діджитал (тис.)", min_value=1.0, max_value=10000.0, value=float(100*(i+1)))
+    imp = col1.number_input(f"Імпр. точка {i+1} Діджитал (тис.)", min_value=1.0, max_value=100000.0, value=float(100*(i+1)))
     reach = col2.number_input(f"Охоплення % точка {i+1} Діджитал", min_value=1.0, max_value=99.0, value=float(min(15*(i+1), 99)))
     digital_points.append((imp, reach))
 
@@ -153,7 +153,7 @@ df["Digital IMP (тижневий)"] = df["Digital IMP (тис)"] / num_weeks_on
 
 # Логіка ефективності: опція ефективна, якщо тижневі показники вище клатера
 df["Ефективний"] = (df["TB TRP (тижневий)"] >= tb_clutter) & \
-                    (df["Digital IMP (тижневий)"] >= digital_clutter)
+                     (df["Digital IMP (тижневий)"] >= digital_clutter)
 
 # Розрахунок CPR (Cost Per Reach)
 # Перевірка ділення на нуль для CrossMedia Reach
