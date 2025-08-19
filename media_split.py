@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import io
 from scipy.interpolate import CubicSpline
 
-st.title("📊 Оптимальний спліт ТБ + Digital з інтерполяцією охоплення")
+st.title("📊 Оптимальний спліт ТБ + Digital з CPR")
 
 # --- Введення точок охоплення ---
 st.subheader("1️⃣ Введіть 5 точок TRP → Reach % для ТБ")
@@ -16,7 +16,7 @@ for i in range(5):
     trp = col1.number_input(f"TRP ТБ, точка {i+1}", min_value=0.0, value=float(i*50+50))
     reach = col2.number_input(f"Reach_TV %, точка {i+1}", min_value=0.0, max_value=100.0, value=float(i*10+20))
     tv_trp_points.append(trp)
-    tv_reach_points.append(reach/100)  # конвертуємо у 0-1
+    tv_reach_points.append(reach/100)
 
 st.subheader("2️⃣ Введіть 5 точок Impressions → Reach % для Digital")
 dig_imp_points = []
@@ -33,7 +33,7 @@ tv_spline = CubicSpline(tv_trp_points, tv_reach_points)
 dig_spline = CubicSpline(dig_imp_points, dig_reach_points)
 
 # --- Вхідні параметри ---
-st.subheader("3️⃣ Введіть параметри бюджету та тривалості")
+st.subheader("3️⃣ Параметри бюджету та тривалості")
 budget = st.number_input("Загальний бюджет", min_value=1000, step=1000, value=50000)
 flight_weeks = st.number_input("Тривалість флайту (тижні)", min_value=1, value=4)
 tv_cost_per_trp = st.number_input("Вартість 1 TRP в ТБ", value=500.0)
@@ -42,14 +42,12 @@ tv_weekly_clutter = st.number_input("Конкурентний тиск ТБ (Т�
 dig_weekly_clutter = st.number_input("Конкурентний тиск Digital (тис. імпресій/тиждень)", value=300.0)
 n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
 
-# --- Розрахунок мінімального бюджету ---
+# --- Мінімальний бюджет ---
 min_budget_tv = tv_weekly_clutter * flight_weeks * tv_cost_per_trp
 min_budget_dig = dig_weekly_clutter * flight_weeks * dig_cost_per_imp / 1000
 min_total_budget = min_budget_tv + min_budget_dig
-
 if budget < min_total_budget:
-    st.warning(f"❌ Поточний бюджет ({int(budget)}) замалий для ефективного спліту. "
-               f"Рекомендований мінімальний бюджет: {int(min_total_budget)}")
+    st.warning(f"❌ Поточний бюджет ({int(budget)}) замалий. Рекомендований мінімальний бюджет: {int(min_total_budget)}")
 
 # --- Генерація варіантів ---
 results = []
@@ -88,8 +86,22 @@ for split in np.linspace(0.1, 0.9, n_options):
 
 df = pd.DataFrame(results)
 
+# --- Додавання CPR ---
+df["CPR"] = (df["Бюджет ТБ"] + df["Бюджет Digital"]) / df["Cross_Reach %"]
+
+# --- Визначення ефективних за конкурентним тиском ---
+df["Тиск_ок"] = (df["Тиск ТБ/тижд"] >= tv_weekly_clutter) & (df["Тиск Digital/тижд"] >= dig_weekly_clutter)
+
+# --- Знаходження оптимального CPR ---
+if df[df["Тиск_ок"]].shape[0] > 0:
+    min_cpr_idx = df[df["Тиск_ок"]]["CPR"].idxmin()
+else:
+    min_cpr_idx = None
+
 # --- Підсвітка ---
 def highlight(row):
+    if row.name == min_cpr_idx:
+        return ["background-color: deepskyblue"]*len(row)  # Найкращий CPR
     color = "background-color: lightgreen" if row["Ефективний"] else "background-color: lightcoral"
     return [color]*len(row)
 
@@ -100,7 +112,12 @@ st.dataframe(df.style.apply(highlight, axis=1))
 st.subheader("📈 Кросмедійне охоплення")
 fig, ax = plt.subplots()
 cross_values = df["Cross_Reach %"]
-colors = ["green" if x else "red" for x in df["Ефективний"]]
+colors = []
+for i,row in df.iterrows():
+    if i == min_cpr_idx:
+        colors.append("deepskyblue")
+    else:
+        colors.append("green" if row["Ефективний"] else "red")
 ax.scatter(df["Спліт ТБ"], cross_values, c=colors, s=100)
 ax.set_ylabel("Кросмедійне охоплення %")
 ax.set_xlabel("Спліт ТБ")
