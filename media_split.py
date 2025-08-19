@@ -4,7 +4,16 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy.optimize import curve_fit
 from io import BytesIO
-import xlsxwriter
+
+# ===========================
+# Перевірка xlsxwriter
+# ===========================
+try:
+    import xlsxwriter
+    XLSX_AVAILABLE = True
+except ImportError:
+    st.warning("Бібліотека xlsxwriter не встановлена. Завантаження Excel недоступне.")
+    XLSX_AVAILABLE = False
 
 st.title("Media Split TV + Digital")
 
@@ -30,20 +39,19 @@ for i in range(5):
     dig_points.append(cols[i].number_input(f"Digital TRP точка {i+1}", min_value=1.0, max_value=10000.0, value=20.0*(i+1)))
 
 # ===========================
-# Естимація охоплень: апроксимація логістичною кривою
+# Естимація охоплень: логістична апроксимація
 # ===========================
 def logistic(x, k, x0, ymax):
     return ymax / (1 + np.exp(-k*(x-x0)))
 
-def fit_logistic(trp_points, reach_points, max_reach):
-    # тут беремо лише точки і робимо апроксимацію до max_reach
+def fit_logistic(trp_points, max_reach):
     reach_points = [min(max_reach, 20*(i+1)) for i in range(len(trp_points))]
     p0 = [0.001, np.median(trp_points), max_reach]
     popt, _ = curve_fit(logistic, trp_points, reach_points, p0=p0, maxfev=10000)
     return popt
 
-tv_k, tv_x0, tv_ymax = fit_logistic(tv_points, tv_points, tv_max_reach)
-dig_k, dig_x0, dig_ymax = fit_logistic(dig_points, dig_points, dig_max_reach)
+tv_k, tv_x0, tv_ymax = fit_logistic(tv_points, tv_max_reach)
+dig_k, dig_x0, dig_ymax = fit_logistic(dig_points, dig_max_reach)
 
 # ===========================
 # Генерація сплітів
@@ -130,19 +138,20 @@ st.plotly_chart(fig3, use_container_width=True)
 # ===========================
 # Завантаження в Excel
 # ===========================
-st.subheader("Завантажити результати в Excel")
-output = BytesIO()
-with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-    df.to_excel(writer, index=False, sheet_name="Results")
-    
-    workbook = writer.book
-    ws = writer.sheets["Results"]
-
-    # Додаємо графіки у Excel
-    fig1.write_image("fig1.png")
-    fig2.write_image("fig2.png")
-    fig3.write_image("fig3.png")
-
-st.download_button("⬇️ Завантажити Excel", data=output.getvalue(), file_name="media_split.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
+if XLSX_AVAILABLE:
+    st.subheader("Завантажити результати в Excel")
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name="Results")
+        workbook = writer.book
+        ws = writer.sheets["Results"]
+        # Можна додати графіки у Excel, якщо потрібно
+    st.download_button(
+        "⬇️ Завантажити Excel",
+        data=output.getvalue(),
+        file_name="media_split.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+else:
+    st.info("Щоб завантажити Excel, встановіть бібліотеку xlsxwriter: pip install xlsxwriter")
 
