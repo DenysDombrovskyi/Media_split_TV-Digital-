@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import interp1d
 import plotly.express as px
 import io
 from openpyxl import Workbook
@@ -9,7 +9,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.chart import LineChart, Reference, BarChart
 
 st.set_page_config(page_title="Media Split Dashboard", layout="wide")
-st.title("🎯 Media Split Dashboard — ТБ + Digital")
+st.title("🎯 Media Split Dashboard — ТБ + Digital (Estimation via Points)")
 
 # --- Sidebar ---
 with st.sidebar:
@@ -25,26 +25,19 @@ with st.sidebar:
     n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
 
 # --- Введення точок для ТБ і Digital ---
-def input_points(media_name):
+def input_points(media_name, max_reach):
     st.subheader(f"{media_name} — Введіть 2-5 точок TRP → Reach (%)")
-    trp_points = []
-    reach_points = []
+    trp_points, reach_points = [], []
     for i in range(5):
         cols = st.columns(2)
-        trp = cols[0].number_input(
-            f"{media_name} TRP точка {i+1}", 
-            min_value=1.0, max_value=10000.0, value=50.0*(i+1), step=10.0
-        )
-        reach = cols[1].number_input(
-            f"{media_name} Reach % точка {i+1}", 
-            min_value=0.0, max_value=100.0, value=20.0*(i+1), step=1.0
-        )
+        trp = cols[0].number_input(f"{media_name} TRP точка {i+1}", min_value=1.0, max_value=10000.0, value=50.0*(i+1), step=10.0)
+        reach = cols[1].number_input(f"{media_name} Reach % точка {i+1}", min_value=0.0, max_value=max_reach, value=min(max_reach,20.0*(i+1)), step=1.0)
         trp_points.append(trp)
         reach_points.append(reach/100)
-    return CubicSpline(trp_points, reach_points)
+    return interp1d(trp_points, reach_points, kind='linear', fill_value=(reach_points[0], reach_points[-1]), bounds_error=False)
 
-tv_spline = input_points("ТБ")
-dig_spline = input_points("Digital")
+tv_spline = input_points("ТБ", 82)
+dig_spline = input_points("Digital", 99)
 
 # --- Генерація сплітів ---
 split_step = split_step_percent / 100.0
@@ -60,7 +53,7 @@ for i, split in enumerate(split_values, start=1):
     dig_imp = dig_budget / dig_cost_per_imp
     dig_trp = dig_imp / audience_size * 100
 
-    # --- Естимація Reach під розрахунковий TRP ---
+    # Естимація Reach через сплайн
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
     dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))
     cross_reach = tv_reach + dig_reach - tv_reach*dig_reach
@@ -151,57 +144,51 @@ def highlight_rows(row):
         return ['background-color: salmon']*len(row)
 st.dataframe(df.style.apply(highlight_rows, axis=1))
 
-# --- Excel Export з графіками ---
-def to_excel_with_charts(df):
-    output = io.BytesIO()
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Results"
+# --- Експорт в Excel ---
+st.subheader("💾 Завантажити результати в Excel")
 
-    for r in dataframe_to_rows(df, index=False, header=True):
-        ws.append(r)
+output = io.BytesIO()
+wb = Workbook()
+ws = wb.active
+ws.title = "Media Split"
 
-    n_rows = df.shape[0] + 1
+# Запис даних
+for r in dataframe_to_rows(df, index=False, header=True):
+    ws.append(r)
 
-    # Стовпчаста гістограма долі бюджету
-    bar = BarChart()
-    bar.type = "col"
-    bar.title = "Долі бюджету по медіа"
-    bar.y_axis.title = "Доля (%)"
-    bar.x_axis.title = "Опція"
-    bar.style = 10
-    bar.width = 20
-    bar.height = 10
-    data = Reference(ws, min_col=df.columns.get_loc("Доля ТБ %")+1,
-                     max_col=df.columns.get_loc("Доля Digital %")+1,
-                     min_row=1, max_row=n_rows)
-    categories = Reference(ws, min_col=1, min_row=2, max_row=n_rows)
-    bar.add_data(data, titles_from_data=True)
-    bar.set_categories(categories)
-    ws.add_chart(bar, "P2")
+# Гістограма долей бюджету
+bar = BarChart()
+bar.title = "Долі бюджету по медіа"
+bar.style = 10
+bar.width = 20
+bar.height = 10
+data_ref = Reference(ws, min_col=df.columns.get_loc("Доля ТБ %")+1, max_col=df.columns.get_loc("Доля Digital %")+1,
+                     min_row=1, max_row=len(df)+1)
+cats = Reference(ws, min_col=1, min_row=2, max_row=len(df)+1)
+bar.add_data(data_ref, titles_from_data=True)
+bar.set_categories(cats)
+bar.shape = 4
+ws.add_chart(bar, "P2")
 
-    # Лінійний графік охоплення
-    line = LineChart()
-    line.title = "Reach TV / Digital / Cross"
-    line.y_axis.title = "Reach %"
-    line.x_axis.title = "Опція"
-    line.style = 12
-    line.width = 20
-    line.height = 10
-    data = Reference(ws, min_col=df.columns.get_loc("Reach_TV %")+1,
-                     max_col=df.columns.get_loc("Cross_Reach %")+1,
-                     min_row=1, max_row=n_rows)
-    line.add_data(data, titles_from_data=True)
-    line.set_categories(categories)
-    ws.add_chart(line, "P20")
+# Лінійний графік охоплення
+line = LineChart()
+line.title = "Reach TV / Digital / Cross"
+data_ref2 = Reference(ws, min_col=df.columns.get_loc("Reach_TV %")+1,
+                      max_col=df.columns.get_loc("Cross_Reach %")+1,
+                      min_row=1, max_row=len(df)+1)
+line.add_data(data_ref2, titles_from_data=True)
+line.set_categories(cats)
+line.height = 10
+line.width = 20
+ws.add_chart(line, "P20")
 
-    wb.save(output)
-    return output
+wb.save(output)
+output.seek(0)
 
 st.download_button(
-    label="⬇️ Завантажити результати в Excel з графіками",
-    data=to_excel_with_charts(df),
-    file_name="media_split_results_with_charts.xlsx",
+    label="⬇️ Завантажити Excel",
+    data=output,
+    file_name="media_split_results.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
