@@ -4,13 +4,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import io
 from scipy.interpolate import CubicSpline
+from openpyxl import load_workbook
+from openpyxl.chart import BarChart, Reference
 
-st.title("📊 Оптимальний спліт ТБ + Digital з CPR")
+st.title("📊 Оптимальний спліт ТБ + Digital з CPR і графіком Excel")
 
 # --- Введення точок охоплення ---
 st.subheader("1️⃣ Введіть 5 точок TRP → Reach % для ТБ")
-tv_trp_points = []
-tv_reach_points = []
+tv_trp_points, tv_reach_points = [], []
 for i in range(5):
     col1, col2 = st.columns(2)
     trp = col1.number_input(f"TRP ТБ, точка {i+1}", min_value=0.0, value=float(i*50+50))
@@ -19,8 +20,7 @@ for i in range(5):
     tv_reach_points.append(reach/100)
 
 st.subheader("2️⃣ Введіть 5 точок Impressions → Reach % для Digital")
-dig_imp_points = []
-dig_reach_points = []
+dig_imp_points, dig_reach_points = [], []
 for i in range(5):
     col1, col2 = st.columns(2)
     imp = col1.number_input(f"Impressions Digital (тис.), точка {i+1}", min_value=0.0, value=float(i*100+100))
@@ -32,7 +32,7 @@ for i in range(5):
 tv_spline = CubicSpline(tv_trp_points, tv_reach_points)
 dig_spline = CubicSpline(dig_imp_points, dig_reach_points)
 
-# --- Вхідні параметри ---
+# --- Параметри бюджету та тривалості ---
 st.subheader("3️⃣ Параметри бюджету та тривалості")
 budget = st.number_input("Загальний бюджет", min_value=1000, step=1000, value=50000)
 flight_weeks = st.number_input("Тривалість флайту (тижні)", min_value=1, value=4)
@@ -60,7 +60,6 @@ for split in np.linspace(0.1, 0.9, n_options):
 
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 1))
     dig_reach = float(np.clip(dig_spline(dig_imp), 0, 1))
-
     cross_reach = tv_reach + dig_reach - tv_reach * dig_reach
 
     tv_weekly = tv_trp / flight_weeks
@@ -88,11 +87,8 @@ df = pd.DataFrame(results)
 
 # --- Додавання CPR ---
 df["CPR"] = (df["Бюджет ТБ"] + df["Бюджет Digital"]) / df["Cross_Reach %"]
-
-# --- Визначення ефективних за конкурентним тиском ---
 df["Тиск_ок"] = (df["Тиск ТБ/тижд"] >= tv_weekly_clutter) & (df["Тиск Digital/тижд"] >= dig_weekly_clutter)
 
-# --- Знаходження оптимального CPR ---
 if df[df["Тиск_ок"]].shape[0] > 0:
     min_cpr_idx = df[df["Тиск_ок"]]["CPR"].idxmin()
 else:
@@ -101,7 +97,7 @@ else:
 # --- Підсвітка ---
 def highlight(row):
     if row.name == min_cpr_idx:
-        return ["background-color: deepskyblue"]*len(row)  # Найкращий CPR
+        return ["background-color: deepskyblue"]*len(row)
     color = "background-color: lightgreen" if row["Ефективний"] else "background-color: lightcoral"
     return [color]*len(row)
 
@@ -125,16 +121,38 @@ ax.set_title("Кросмедійне охоплення залежно від с
 plt.xticks(rotation=45)
 st.pyplot(fig)
 
-# --- Експорт Excel ---
-st.subheader("⬇️ Завантаження Excel")
+# --- Експорт Excel з графіком ---
+st.subheader("⬇️ Завантаження Excel з графіком")
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="Splits")
+    writer.save()
+
 output.seek(0)
+wb = load_workbook(output)
+ws = wb["Splits"]
+
+chart = BarChart()
+chart.type = "col"
+chart.title = "Охоплення по варіантах спліту"
+chart.y_axis.title = "Reach %"
+chart.x_axis.title = "Спліт ТБ"
+
+data = Reference(ws, min_col=7, max_col=9, min_row=1, max_row=ws.max_row)
+cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
+chart.add_data(data, titles_from_data=True)
+chart.set_categories(cats)
+chart.shape = 4
+ws.add_chart(chart, "L2")
+
+output_chart = io.BytesIO()
+wb.save(output_chart)
+output_chart.seek(0)
+
 st.download_button(
-    label="Скачати Excel",
-    data=output,
-    file_name="media_split.xlsx",
+    label="Скачати Excel з графіком",
+    data=output_chart,
+    file_name="media_split_chart.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
