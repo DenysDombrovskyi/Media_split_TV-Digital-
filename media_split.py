@@ -119,12 +119,14 @@ ax.legend()
 plt.xticks(rotation=45)
 st.pyplot(fig)
 
-# --- Лінійний графік охоплення (кросмедійне) ---
-st.subheader("📈 Кросмедійне охоплення по всіх варіантах спліту")
+# --- Лінійний графік охоплення (кросмедійне + медіа) ---
+st.subheader("📈 Охоплення по всіх варіантах спліту")
 fig2, ax2 = plt.subplots(figsize=(10,5))
+ax2.plot(df["Спліт ТБ"], df["Reach_TV %"], marker='o', label="Reach_TV %")
+ax2.plot(df["Спліт ТБ"], df["Reach_Digital %"], marker='o', label="Reach_Digital %")
 ax2.plot(df["Спліт ТБ"], df["Cross_Reach %"], marker='o', label="Cross_Reach %")
 ax2.set_ylabel("Охоплення %")
-ax2.set_title("Кросмедійне охоплення по всіх варіантах сплітів")
+ax2.set_title("Кросмедійне та медіа охоплення")
 ax2.legend()
 plt.xticks(rotation=45)
 st.pyplot(fig2)
@@ -154,13 +156,13 @@ budget_chart.add_data(data, titles_from_data=True)
 budget_chart.set_categories(cats)
 ws.add_chart(budget_chart, "L2")
 
-# --- Лінійний графік кросмедійного охоплення ---
+# --- Лінійний графік охоплення (Reach_TV %, Reach_Digital %, Cross_Reach %) ---
 reach_chart = LineChart()
-reach_chart.title = "Кросмедійне охоплення по сплітах"
+reach_chart.title = "Охоплення по сплітах"
 reach_chart.y_axis.title = "Reach %"
 reach_chart.x_axis.title = "Спліт ТБ"
 
-data = Reference(ws, min_col=9, max_col=9, min_row=1, max_row=ws.max_row)  # тільки Cross_Reach %
+data = Reference(ws, min_col=7, max_col=9, min_row=1, max_row=ws.max_row)  # тільки охоплення
 cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
 reach_chart.add_data(data, titles_from_data=True)
 reach_chart.set_categories(cats)
