@@ -1,169 +1,151 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from scipy.optimize import curve_fit
+from scipy.interpolate import PchipInterpolator
 from io import BytesIO
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Media Split TV + Digital", layout="wide")
-st.title("Media Split TV + Digital")
+st.title("Media Split Calculator")
 
-# ===========================
-# Вхідні дані
-# ===========================
-budget = st.slider("Бюджет (грн)", 100_000, 50_000_000, 5_000_000, step=100_000)
-flight_weeks = st.slider("Тривалість флайту (тижні)", 1, 30, 4)
-split_step = st.selectbox("Крок спліту (%)", options=[5, 10, 15, 20], index=1)
-
-tv_max_reach = 82
-dig_max_reach = 99
-
-# ===========================
-# Введення точок TRP ↔ Reach
-# ===========================
-st.subheader("Введіть точки TRP ↔ Reach для естимації")
-
-def input_points(media_name, max_reach):
-    points = []
-    cols = st.columns(5)
-    for i in range(5):
+# --- Функція введення точок ---
+def input_points(media_name, max_reach=100.0, n_points=5):
+    st.write(f"### Введіть {n_points} точок для {media_name}")
+    cols = st.columns(n_points)
+    trp_points = []
+    reach_points = []
+    
+    for i in range(n_points):
+        reach = cols[i].number_input(
+            f"{media_name} Reach % точка {i+1}",
+            min_value=0.0,
+            max_value=float(max_reach),
+            value=float(min(float(max_reach), 20.0*(i+1))),
+            step=1.0,
+            key=f"{media_name}_reach_{i}"
+        )
         trp = cols[i].number_input(
             f"{media_name} TRP точка {i+1}",
             min_value=1.0,
             max_value=10000.0,
             value=float(20*(i+1)),
-            step=1.0
+            step=1.0,
+            key=f"{media_name}_trp_{i}"
         )
-        reach = cols[i].number_input(
-            f"{media_name} Reach % точка {i+1}",
-            min_value=0.0,
-            max_value=max_reach,
-            value=float(min(max_reach, 20*(i+1))),
-            step=1.0
-        )
-        points.append((trp, reach))
-    return points
-
-tv_points = input_points("ТБ", tv_max_reach)
-dig_points = input_points("Digital", dig_max_reach)
-
-# ===========================
-# Логістична естимація
-# ===========================
-def logistic(x, k, x0, ymax):
-    return ymax / (1 + np.exp(-k*(x-x0)))
-
-def fit_logistic(points, max_reach):
-    trp_vals, reach_vals = zip(*points)
-    p0 = [0.001, np.median(trp_vals), max_reach]
-    popt, _ = curve_fit(logistic, trp_vals, reach_vals, p0=p0, maxfev=10000)
-    return popt
-
-tv_k, tv_x0, tv_ymax = fit_logistic(tv_points, tv_max_reach)
-dig_k, dig_x0, dig_ymax = fit_logistic(dig_points, dig_max_reach)
-
-# ===========================
-# Генерація сплітів
-# ===========================
-splits = np.arange(0, 1+split_step/100, split_step/100)
-options = []
-for s in splits:
-    tv_budget = budget * s
-    dig_budget = budget * (1-s)
+        reach_points.append(reach)
+        trp_points.append(trp)
     
-    tv_trp = tv_budget / 500
-    dig_trp = dig_budget / 50
+    return trp_points, reach_points
 
-    tv_reach = logistic(tv_trp, tv_k, tv_x0, tv_ymax)
-    dig_reach = logistic(dig_trp, dig_k, dig_x0, dig_ymax)
-    cross_reach = tv_reach + dig_reach - tv_reach*dig_reach/100
+# --- Введення точок ---
+tv_trp_pts, tv_reach_pts = input_points("ТБ", max_reach=82)
+digital_trp_pts, digital_reach_pts = input_points("Digital", max_reach=99)
 
-    total_cpr = budget / (cross_reach*100) if cross_reach>0 else np.nan
-    effective = cross_reach>0
+# --- Естимація охоплення через PCHIP (монотонна апроксимація) ---
+tv_spline = PchipInterpolator(tv_trp_pts, tv_reach_pts)
+digital_spline = PchipInterpolator(digital_trp_pts, digital_reach_pts)
 
-    options.append({
-        "Опція": f"{int(s*100)}% ТБ",
-        "TV_TRP": tv_trp,
-        "Digital_TRP": dig_trp,
-        "TV_Reach %": tv_reach,
-        "Digital_Reach %": dig_reach,
-        "Cross_Reach %": cross_reach,
-        "CPR": total_cpr,
-        "Ефективний": effective,
-        "TV_бюджет": tv_budget,
-        "Digital_бюджет": dig_budget
-    })
+# --- Введення бюджету та тривалості ---
+budget = st.slider("Бюджет, грн", min_value=100_000, max_value=50_000_000, step=100_000, value=5_000_000)
+flight_weeks = st.slider("Тривалість флайту, тижні", min_value=1, max_value=30, value=4)
+step_percent = st.selectbox("Крок спліту бюджету, %", options=[5,10,15,20], index=1)
 
-df = pd.DataFrame(options)
-best_idx = df[df["Ефективний"]]["CPR"].idxmin() if df["Ефективний"].any() else df["CPR"].idxmin()
+# --- Приклади опцій спліту ---
+splits = []
+for p in range(0, 101, step_percent):
+    splits.append({"ТБ %": p, "Digital %": 100-p})
 
-# ===========================
-# Таблиця в інтерфейсі
-# ===========================
-def highlight(row):
-    color = ['']*len(row)
-    if row["CPR"] == df.loc[best_idx, "CPR"]:
-        color = ['background-color: lightgreen']*len(row)
-    elif not row["Ефективний"]:
-        color = ['background-color: lightcoral']*len(row)
-    return color
+df = pd.DataFrame(splits)
 
-st.subheader("Варіанти сплітів")
-st.dataframe(df.style.apply(highlight, axis=1))
+# --- Розрахунок TRP і Reach ---
+tv_max_trp = 10000
+digital_max_trp = 10000
 
-# ===========================
-# Графіки в Streamlit
-# ===========================
-st.subheader("Графік спліту бюджету")
-fig = go.Figure()
-fig.add_trace(go.Bar(
-    x=df["Опція"],
-    y=df["TV_бюджет"]/budget*100,
-    name="ТБ",
-    marker_color='black'
-))
-fig.add_trace(go.Bar(
-    x=df["Опція"],
-    y=df["Digital_бюджет"]/budget*100,
-    name="Digital",
-    marker_color='red'
-))
-fig.update_layout(barmode='stack', yaxis_title="Доля бюджету (%)")
-st.plotly_chart(fig, use_container_width=True)
+tv_reach_est = [min(82, tv_spline(tv_max_trp * row["ТБ %"]/100)) for _, row in df.iterrows()]
+digital_reach_est = [min(99, digital_spline(digital_max_trp * row["Digital %"]/100)) for _, row in df.iterrows()]
+cross_reach = [tv + dig - tv*dig/100 for tv,dig in zip(tv_reach_est, digital_reach_est)]
 
-st.subheader("Графік естимованого охоплення")
-reach_fig = go.Figure()
-reach_fig.add_trace(go.Scatter(x=df["Опція"], y=df["TV_Reach %"], mode='lines+markers', name='ТБ', line=dict(color='black')))
-reach_fig.add_trace(go.Scatter(x=df["Опція"], y=df["Digital_Reach %"], mode='lines+markers', name='Digital', line=dict(color='red')))
-reach_fig.add_trace(go.Scatter(x=df["Опція"], y=df["Cross_Reach %"], mode='lines+markers', name='Кросмедійне', line=dict(color='green')))
-reach_fig.update_layout(yaxis_title="Reach %")
-st.plotly_chart(reach_fig, use_container_width=True)
+df["TV Reach %"] = tv_reach_est
+df["Digital Reach %"] = digital_reach_est
+df["Cross Media Reach %"] = cross_reach
+df["Effective"] = df["Cross Media Reach %"]>0
 
-# ===========================
-# Завантаження в Excel
-# ===========================
-st.subheader("Завантажити результати в Excel")
+# --- Вивід таблиці ---
+st.subheader("Опції спліту")
+st.dataframe(df)
+
+# --- Графік спліту ---
+fig, ax = plt.subplots()
+ax.bar([str(i+1) for i in range(len(df))], df["ТБ %"], label="ТБ", color="black")
+ax.bar([str(i+1) for i in range(len(df))], df["Digital %"], bottom=df["ТБ %"], label="Digital", color="red")
+ax.set_ylabel("Доля бюджету %")
+ax.set_xlabel("Опція")
+ax.set_title("Розподіл бюджету по медіа")
+ax.legend()
+st.pyplot(fig)
+
+# --- Графік охоплення ---
+fig2, ax2 = plt.subplots()
+ax2.plot(range(1,len(df)+1), df["TV Reach %"], marker="o", color="black", label="ТБ")
+ax2.plot(range(1,len(df)+1), df["Digital Reach %"], marker="o", color="red", label="Digital")
+ax2.plot(range(1,len(df)+1), df["Cross Media Reach %"], marker="o", color="green", label="Cross Media")
+ax2.set_ylabel("Охоплення %")
+ax2.set_xlabel("Опція")
+ax2.set_title("Естимоване охоплення")
+ax2.legend()
+st.pyplot(fig2)
+
+# --- Експорт в Excel з графіками ---
 output = BytesIO()
 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-    df.to_excel(writer, index=False, sheet_name="Results")
-    pd.DataFrame(tv_points, columns=["TRP", "Reach"]).to_excel(writer, index=False, sheet_name="TV_Points")
-    pd.DataFrame(dig_points, columns=["TRP", "Reach"]).to_excel(writer, index=False, sheet_name="Digital_Points")
+    df.to_excel(writer, index=False, sheet_name='Media Split')
+    
+    workbook = writer.book
+    ws = writer.sheets['Media Split']
     
     # Додаємо графік спліту
-    workbook = writer.book
-    ws = writer.sheets["Results"]
-    chart = workbook.add_chart({'type': 'column', 'subtype': 'stacked'})
-    chart.add_series({'name': 'ТБ', 'categories': ['Results', 1, 0, len(df), 0], 'values': ['Results', 1, 8, len(df), 8], 'fill': {'color': 'black'}})
-    chart.add_series({'name': 'Digital', 'categories': ['Results', 1, 0, len(df), 0], 'values': ['Results', 1, 9, len(df), 9], 'fill': {'color': 'red'}})
-    chart.set_title({'name': 'Спліт бюджету (%)'})
-    chart.set_y_axis({'name': 'Доля бюджету (%)'})
-    ws.insert_chart('L2', chart)
+    chart1 = workbook.add_chart({'type':'column'})
+    chart1.add_series({
+        'name': 'ТБ',
+        'categories': ['Media Split', 1, 0, len(df), 0],
+        'values':     ['Media Split', 1, 1, len(df), 1],
+        'fill': {'color': 'black'}
+    })
+    chart1.add_series({
+        'name': 'Digital',
+        'categories': ['Media Split', 1, 0, len(df), 0],
+        'values':     ['Media Split', 1, 2, len(df), 2],
+        'fill': {'color': 'red'}
+    })
+    chart1.set_title({'name':'Розподіл бюджету по медіа'})
+    ws.insert_chart('G2', chart1, {'x_scale': 1.5, 'y_scale': 1.5})
     
-st.download_button(
-    "⬇️ Завантажити Excel",
-    data=output.getvalue(),
-    file_name="media_split.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+    # Додаємо графік охоплення
+    chart2 = workbook.add_chart({'type':'line'})
+    chart2.add_series({
+        'name': 'ТБ',
+        'categories': ['Media Split', 1, 0, len(df), 0],
+        'values':     ['Media Split', 1, 3, len(df), 3],
+        'line': {'color': 'black'}
+    })
+    chart2.add_series({
+        'name': 'Digital',
+        'categories': ['Media Split', 1, 0, len(df), 0],
+        'values':     ['Media Split', 1, 4, len(df), 4],
+        'line': {'color': 'red'}
+    })
+    chart2.add_series({
+        'name': 'Cross Media',
+        'categories': ['Media Split', 1, 0, len(df), 0],
+        'values':     ['Media Split', 1, 5, len(df), 5],
+        'line': {'color': 'green'}
+    })
+    chart2.set_title({'name':'Естимоване охоплення'})
+    ws.insert_chart('G20', chart2, {'x_scale': 1.5, 'y_scale': 1.5})
+    
+    writer.save()
+
+st.download_button("⬇️ Завантажити результати в Excel", data=output.getvalue(),
+                   file_name="media_split.xlsx",
+                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
