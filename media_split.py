@@ -20,8 +20,20 @@ def input_points(media_name, max_reach):
     reach_points = []
     cols = st.columns(5)
     for i in range(5):
-        trp = cols[i].number_input(f"{media_name} TRP точка {i+1}", min_value=1, max_value=10000, value=50*(i+1), step=1)
-        reach = cols[i].number_input(f"{media_name} Reach % точка {i+1}", min_value=0.0, max_value=max_reach, value=min(max_reach,20.0*(i+1)), step=1.0)
+        trp = cols[i].number_input(
+            f"{media_name} TRP точка {i+1}",
+            min_value=1.0,
+            max_value=10000.0,
+            value=float(50*(i+1)),
+            step=1.0
+        )
+        reach = cols[i].number_input(
+            f"{media_name} Reach % точка {i+1}",
+            min_value=0.0,
+            max_value=float(max_reach),
+            value=min(float(max_reach), 20.0*(i+1)),
+            step=0.1
+        )
         trp_points.append(trp)
         reach_points.append(reach)
     return np.array(trp_points), np.array(reach_points)
@@ -51,8 +63,8 @@ budget = st.slider("Бюджет (грн)", 100_000, 50_000_000, 5_000_000, step
 flight_weeks = st.slider("Тривалість флайту (тижнів)", 1, 30, 4)
 
 st.subheader("Ціна за 1 TRP")
-tv_cpt = st.number_input("ТБ CPR (грн)", min_value=1, value=500)
-dig_cpt = st.number_input("Digital CPR (грн)", min_value=1, value=500)
+tv_cpt = st.number_input("ТБ CPR (грн)", min_value=1.0, value=500.0)
+dig_cpt = st.number_input("Digital CPR (грн)", min_value=1.0, value=500.0)
 
 # ===========================
 # Варіанти спліту
@@ -155,4 +167,5 @@ wb.save(output)
 st.download_button("⬇️ Завантажити Excel", output.getvalue(),
                    file_name="media_split.xlsx",
                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 
