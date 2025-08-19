@@ -30,11 +30,30 @@ def input_points(media_name, max_reach):
     trp_points, reach_points = [], []
     for i in range(5):
         cols = st.columns(2)
-        trp = cols[0].number_input(f"{media_name} TRP точка {i+1}", min_value=1.0, max_value=10000.0, value=50.0*(i+1), step=10.0)
-        reach = cols[1].number_input(f"{media_name} Reach % точка {i+1}", min_value=0.0, max_value=max_reach, value=min(max_reach,20.0*(i+1)), step=1.0)
+        trp = cols[0].number_input(
+            f"{media_name} TRP точка {i+1}",
+            min_value=1.0,
+            max_value=10000.0,
+            value=float(50*(i+1)),
+            step=10.0
+        )
+        reach = cols[1].number_input(
+            f"{media_name} Reach % точка {i+1}",
+            min_value=0.0,
+            max_value=float(max_reach),
+            value=float(min(max_reach, 20*(i+1))),
+            step=1.0
+        )
         trp_points.append(trp)
-        reach_points.append(reach/100)
-    return interp1d(trp_points, reach_points, kind='linear', fill_value=(reach_points[0], reach_points[-1]), bounds_error=False)
+        reach_points.append(reach/100)  # перетворюємо у відсотки
+    # Створюємо інтерполяційний сплайн
+    return interp1d(
+        trp_points,
+        reach_points,
+        kind='linear',
+        fill_value=(reach_points[0], reach_points[-1]),
+        bounds_error=False
+    )
 
 tv_spline = input_points("ТБ", 82)
 dig_spline = input_points("Digital", 99)
@@ -191,4 +210,3 @@ st.download_button(
     file_name="media_split_results.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-
