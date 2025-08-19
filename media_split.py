@@ -1,112 +1,95 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from scipy.interpolate import interp1d
-from io import BytesIO
+import io
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Media Split Optimizer", layout="wide")
 
-st.title("Media Split Optimizer: TV + Digital")
+st.title("Media Split Optimizer")
 
-# --------------------------
-# Параметри бюджету та крок спліту
-# --------------------------
-st.sidebar.header("Параметри кампанії")
-budget = st.sidebar.slider("Бюджет (грн)", min_value=100_000, max_value=50_000_000, value=5_000_000, step=100_000)
-flight_weeks = st.sidebar.slider("Тривалість флайту (тижнів)", min_value=1, max_value=30, value=4)
-split_step = st.sidebar.selectbox("Крок спліту (%)", [5,10,15,20])
+# --- Параметри ---
+budget = st.number_input("Бюджет, грн", min_value=100_000, max_value=50_000_000, value=5_000_000, step=100_000)
+cpm = st.number_input("CPM, грн", min_value=100.0, max_value=5000.0, value=500.0, step=50.0)
+flight_weeks = st.slider("Тривалість флайту, тижнів", 1, 30, 4)
+split_step = st.selectbox("Крок спліту по бюджету, %", [5, 10, 15, 20])
+clutter_tv = st.number_input("Клаттер конкурентів ТБ TRP", min_value=1.0, max_value=1000.0, value=100.0, step=1.0)
+clutter_dig = st.number_input("Клаттер конкурентів Digital %", min_value=1.0, max_value=100.0, value=10.0, step=1.0)
 
-# --------------------------
-# Введення даних про медіа та клаттер конкурентів
-# --------------------------
-st.sidebar.subheader("Вхідні дані медіа")
-cpm_tv = st.sidebar.number_input("Вартість ТБ (грн/ТРП)", value=500.0, min_value=1.0)
-cpm_dig = st.sidebar.number_input("Вартість Digital (грн/1000 імпресій)", value=500.0, min_value=1.0)
+# --- Введення точок ---
+def input_points(media_name, max_reach):
+    cols = st.columns(5)
+    trp_points = []
+    reach_points = []
+    for i, col in enumerate(cols):
+        trp = col.number_input(
+            f"{media_name} TRP точка {i+1}",
+            min_value=1.0,
+            max_value=10000.0,
+            value=float(20*(i+1)),
+            step=1.0
+        )
+        reach = col.number_input(
+            f"{media_name} Reach % точка {i+1}",
+            min_value=1.0,
+            max_value=float(max_reach),
+            value=float(min(max_reach, 20*(i+1))),
+            step=1.0
+        )
+        trp_points.append(trp)
+        reach_points.append(reach)
+    return trp_points, reach_points
 
-clutter_tv = st.sidebar.number_input("Клаттер конкурентів ТБ (ТРП/тиждень)", value=150.0, min_value=1.0)
-clutter_dig = st.sidebar.number_input("Клаттер конкурентів Digital (тис імпр.)", value=200.0, min_value=1.0)
+tv_max_reach = 82.0
+dig_max_reach = 99.0
 
-# --------------------------
-# Введення точок для естимації охоплення
-# --------------------------
-st.header("Введіть точки для естимації охоплення")
+tv_trp_pts, tv_reach_pts = input_points("ТБ", tv_max_reach)
+dig_trp_pts, dig_reach_pts = input_points("Digital", dig_max_reach)
 
-tv_points = []
-dig_points = []
+# --- Естимація охоплення логістичною кривою ---
+def logistic_estimation(trp_pts, reach_pts, trp_max):
+    x = np.array(trp_pts)
+    y = np.array(reach_pts)/100.0
+    # Логістична функція
+    def logistic(x, L, k, x0):
+        return L / (1 + np.exp(-k*(x - x0)))
+    # Початкові параметри
+    from scipy.optimize import curve_fit
+    try:
+        popt, _ = curve_fit(logistic, x, y, bounds=([0,0,0],[1,10,trp_max]))
+    except:
+        popt = [max(y), 0.1, np.median(x)]
+    x_full = np.linspace(0, trp_max, 100)
+    y_full = logistic(x_full, *popt)*100
+    return x_full, y_full
 
-st.subheader("ТБ")
-cols = st.columns(5)
-for i, col in enumerate(cols):
-    trp = col.number_input(f"ТРП точка {i+1}", min_value=1.0, max_value=10000.0, value=20*(i+1))
-    reach = col.number_input(f"Reach % точка {i+1}", min_value=1.0, max_value=82.0, value=min(20*(i+1), 82))
-    tv_points.append((trp, reach/100))
+tv_x, tv_y = logistic_estimation(tv_trp_pts, tv_reach_pts, 10000)
+dig_x, dig_y = logistic_estimation(dig_trp_pts, dig_reach_pts, 10000)
 
-st.subheader("Digital")
-cols = st.columns(5)
-for i, col in enumerate(cols):
-    imp = col.number_input(f"Імпресії точка {i+1} (тис)", min_value=1.0, max_value=10000.0, value=20*(i+1))
-    reach = col.number_input(f"Reach % точка {i+1}", min_value=1.0, max_value=99.0, value=min(20*(i+1), 99))
-    dig_points.append((imp, reach/100))
-
-# --------------------------
-# Вибір методу естимації
-# --------------------------
-st.subheader("Метод естимації охоплення")
-method = st.selectbox("Виберіть метод естимації", ["Лінійна", "Сплайн", "Логістична"], index=2)
-st.info("Логістична крива та сплайн зазвичай точніше для насичення аудиторії")
-
-# --------------------------
-# Функції естимації охоплення
-# --------------------------
-def estimate_reach(points, max_reach, method="Логістична"):
-    x = np.array([p[0] for p in points])
-    y = np.array([p[1] for p in points])
-    
-    x_eval = np.linspace(min(x), max(x), 100)
-    
-    if method=="Лінійна":
-        f = interp1d(x, y, fill_value="extrapolate")
-    elif method=="Сплайн":
-        f = interp1d(x, y, kind='cubic', fill_value="extrapolate")
-    else:  # Логістична
-        from scipy.optimize import curve_fit
-        def logistic(x, L, k, x0):
-            return L / (1 + np.exp(-k*(x-x0)))
-        p0 = [max(y),1,np.median(x)]
-        try:
-            popt, _ = curve_fit(logistic, x, y, p0, maxfev=10000)
-        except:
-            popt = [max(y),1,np.median(x)]
-        f = lambda x_eval: np.minimum(logistic(x_eval,*popt), max_reach)
-    return f
-
-tv_estimator = estimate_reach(tv_points, 0.82, method)
-dig_estimator = estimate_reach(dig_points, 0.99, method)
-
-# --------------------------
-# Генерація варіантів спліту
-# --------------------------
-splits = np.arange(0, 1+split_step/100, split_step/100)
+# --- Опції спліту ---
+options = np.arange(0, 101, split_step)
 results = []
 
-for tv_share in splits:
+for opt in options:
+    tv_share = opt/100
     dig_share = 1-tv_share
-    tv_trp = budget*tv_share / cpm_tv
-    dig_imp = budget*dig_share / cpm_dig
-    tv_reach = tv_estimator(tv_trp)
-    dig_reach = dig_estimator(dig_imp)
-    cross_reach = 1-(1-tv_reach)*(1-dig_reach)
-    cpr = budget/(tv_trp+dig_imp)  # простий приклад
-    eff = (tv_trp/flight_weeks >= clutter_tv) and (dig_imp/flight_weeks >= clutter_dig)
+    tv_trp = tv_share*budget/cpm*1000/flight_weeks
+    dig_trp = dig_share*budget/cpm*1000/flight_weeks
+    tv_reach = np.interp(tv_trp, tv_x, tv_y)
+    dig_reach = np.interp(dig_trp, dig_x, dig_y)
+    tv_eff = tv_trp >= clutter_tv
+    dig_eff = dig_trp >= clutter_dig
+    eff = tv_eff and dig_eff
+    cross_reach = tv_reach/100 + dig_reach/100 - (tv_reach/100)*(dig_reach/100)
+    cpr = budget / (tv_trp + dig_trp) if (tv_trp + dig_trp) > 0 else np.nan
     results.append({
-        "TV %": tv_share*100,
-        "Digital %": dig_share*100,
+        "Опція": int(opt/ split_step + 1),
         "TV TRP": tv_trp,
-        "Digital Imp": dig_imp,
-        "TV Reach %": tv_reach*100,
-        "Digital Reach %": dig_reach*100,
+        "TV Reach %": tv_reach,
+        "Digital TRP": dig_trp,
+        "Digital Reach %": dig_reach,
         "Cross Reach %": cross_reach*100,
         "CPR": cpr,
         "Ефективний": eff
@@ -114,93 +97,76 @@ for tv_share in splits:
 
 df = pd.DataFrame(results)
 
-# --------------------------
-# Відображення таблиці з підсвічуванням
-# --------------------------
+# --- Підсвічування ---
 def highlight(row):
     if row["Ефективний"]:
         return ["background-color: lightgreen"]*len(row)
     else:
         return ["background-color: lightcoral"]*len(row)
 
-st.subheader("Результати сплітів")
 st.dataframe(df.style.apply(highlight, axis=1))
 
-# --------------------------
-# Графік бюджету по медіа
-# --------------------------
-st.subheader("Розподіл бюджету по медіа")
-fig, ax = plt.subplots(figsize=(8,4))
-ax.bar("Бюджет", df["TV %"], label="ТБ", color='black', bottom=0)
-ax.bar("Бюджет", df["Digital %"], label="Digital", color='red', bottom=df["TV %"])
-ax.set_ylabel("Доля бюджету (%)")
-ax.legend()
+# --- Графіки ---
+fig, ax = plt.subplots(1,2, figsize=(12,5))
+
+# Спліт стовпчасто
+ax[0].bar(['TV','Digital'], [df.iloc[df['CPR'].idxmin()]["TV TRP"], df.iloc[df['CPR'].idxmin()]["Digital TRP"]],
+          color=['black','red'])
+ax[0].set_title("Найкращий спліт (TRP)")
+ax[0].set_ylabel("TRP")
+
+# Кросмедіа
+ax[1].plot(df['Опція'], df['Cross Reach %'], marker='o')
+ax[1].set_title("Кросмедійне охоплення")
+ax[1].set_xlabel("Опції")
+ax[1].set_ylabel("%")
+
 st.pyplot(fig)
 
-# --------------------------
-# Графік естимованих охоплень
-# --------------------------
-st.subheader("Естимовані охоплення медіа")
-fig2, ax2 = plt.subplots(figsize=(8,4))
-x_eval = np.linspace(0, max(df["TV TRP"].max(), df["Digital Imp"].max()),100)
-ax2.plot(x_eval, tv_estimator(x_eval)*100, label="ТБ Reach %", color="black")
-ax2.plot(x_eval, dig_estimator(x_eval)*100, label="Digital Reach %", color="red")
-ax2.set_xlabel("ТРП / Digital тис імпр.")
-ax2.set_ylabel("Reach %")
-ax2.legend()
-st.pyplot(fig2)
-
-# --------------------------
-# Експорт в Excel
-# --------------------------
-st.subheader("Експорт результатів")
-output = BytesIO()
+# --- Експорт в Excel ---
+output = io.BytesIO()
 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
     df.to_excel(writer, index=False, sheet_name="Results")
     workbook  = writer.book
     worksheet = writer.sheets["Results"]
-    
-    # Додаємо графік бюджету
+
+    # Додаємо графіки
     chart1 = workbook.add_chart({'type': 'column'})
     chart1.add_series({
-        'name': 'ТБ',
-        'categories': ['Results', 1,0, len(df),0],
-        'values':     ['Results', 1,2, len(df),2],
+        'name': 'TV TRP',
+        'categories': f'=Results!$A$2:$A${len(df)+1}',
+        'values': f'=Results!$B$2:$B${len(df)+1}',
         'fill': {'color': 'black'}
     })
     chart1.add_series({
-        'name': 'Digital',
-        'categories': ['Results', 1,0, len(df),0],
-        'values':     ['Results', 1,3, len(df),3],
+        'name': 'Digital TRP',
+        'categories': f'=Results!$A$2:$A${len(df)+1}',
+        'values': f'=Results!$D$2:$D${len(df)+1}',
         'fill': {'color': 'red'}
     })
+    chart1.set_title({'name': 'TRP Спліт'})
+    chart1.set_x_axis({'name': 'Опції'})
+    chart1.set_y_axis({'name': 'TRP'})
     worksheet.insert_chart('J2', chart1)
-    
-    # Додаємо графік охоплення
+
     chart2 = workbook.add_chart({'type': 'line'})
     chart2.add_series({
-        'name': 'ТБ Reach %',
-        'categories': ['Results', 1,0, len(df),0],
-        'values': ['Results',1,5,len(df),5],
-        'line': {'color': 'black'}
+        'name': 'Cross Reach %',
+        'categories': f'=Results!$A$2:$A${len(df)+1}',
+        'values': f'=Results!$F$2:$F${len(df)+1}',
+        'line': {'color': 'blue'}
     })
-    chart2.add_series({
-        'name': 'Digital Reach %',
-        'categories': ['Results',1,0,len(df),0],
-        'values': ['Results',1,6,len(df),6],
-        'line': {'color': 'red'}
-    })
+    chart2.set_title({'name': 'Кросмедійне охоплення'})
+    chart2.set_x_axis({'name': 'Опції'})
+    chart2.set_y_axis({'name': '%'})
     worksheet.insert_chart('J20', chart2)
-    
-    writer.save()
-    processed_data = output.getvalue()
 
+    writer.save()
 st.download_button(
-    label="⬇️ Завантажити результати в Excel",
-    data=processed_data,
+    "⬇️ Завантажити результати в Excel",
+    data=output.getvalue(),
     file_name="media_split.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-
 
 
