@@ -126,7 +126,6 @@ st.subheader("⬇️ Завантаження Excel з графіком")
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="Splits")
-    writer.save()
 
 output.seek(0)
 wb = load_workbook(output)
@@ -155,4 +154,5 @@ st.download_button(
     file_name="media_split_chart.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
 
