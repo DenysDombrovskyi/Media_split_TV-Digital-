@@ -4,30 +4,14 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 import plotly.express as px
 import io
-from openpyxl import Workbook
 
 st.set_page_config(page_title="Media Split Optimizer", layout="wide")
 st.title("📊 Сучасний медіа-спліт ТБ + Digital")
 
-# --- Sidebar з розширеними повзунками ---
+# --- Sidebar ---
 st.sidebar.header("Основні параметри")
-
-budget = st.sidebar.slider(
-    "Загальний бюджет",
-    min_value=100_000,
-    max_value=50_000_000,
-    value=5_000_000,
-    step=100_000
-)
-
-flight_weeks = st.sidebar.slider(
-    "Тривалість флайту (тижні)",
-    min_value=1,
-    max_value=30,
-    value=4,
-    step=1
-)
-
+budget = st.sidebar.slider("Загальний бюджет", 100_000, 50_000_000, 5_000_000, step=100_000)
+flight_weeks = st.sidebar.slider("Тривалість флайту (тижні)", 1, 30, 4, step=1)
 audience_size = st.sidebar.number_input("Розмір аудиторії Digital (тис.)", min_value=1.0, value=1000.0)
 tv_cost_per_trp = st.sidebar.number_input("Вартість 1 TRP ТБ", value=500.0)
 dig_cost_per_imp = st.sidebar.number_input("Вартість 1 тис. імпресій Digital", value=5.0)
@@ -35,7 +19,7 @@ tv_weekly_clutter = st.sidebar.number_input("Конкурентний тиск �
 dig_weekly_clutter = st.sidebar.number_input("Конкурентний тиск Digital (тис. імпресій/тиждень)", value=300.0)
 n_options = st.sidebar.slider("Кількість варіантів сплітів", 5, 15, 10)
 
-# --- Expander для вводу ТБ ---
+# --- Expander TRP → Reach для ТБ ---
 with st.expander("Введіть 5 точок TRP → Reach % для ТБ"):
     tv_trp_points, tv_reach_points = [], []
     for i in range(5):
@@ -45,7 +29,7 @@ with st.expander("Введіть 5 точок TRP → Reach % для ТБ"):
         tv_trp_points.append(trp)
         tv_reach_points.append(reach/100)
 
-# --- Expander для вводу Digital ---
+# --- Expander TRP → Reach для Digital ---
 with st.expander("Введіть 5 точок TRP → Reach % для Digital"):
     dig_trp_points, dig_reach_points = [], []
     for i in range(5):
@@ -64,24 +48,37 @@ results = []
 for split in np.linspace(0.1, 0.9, n_options):
     tv_budget = budget * split
     dig_budget = budget * (1 - split)
+    
+    # TRP ТБ
     tv_trp = tv_budget / tv_cost_per_trp
-    dig_imp = dig_budget / dig_cost_per_imp * 1000
-    dig_trp = dig_imp / audience_size * 100  # TRP Digital без обмеження
+    
+    # Digital TRP
+    dig_imp = dig_budget / dig_cost_per_imp       # тис. імпресій
+    dig_trp = dig_imp / audience_size * 100       # TRP %
+    
+    # Reach
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
     dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))
     cross_reach = tv_reach + dig_reach - tv_reach*dig_reach
+    
+    # Тижневий тиск
     tv_weekly = tv_trp / flight_weeks
     dig_weekly = dig_trp / flight_weeks
+    
+    # Ефективність
     overall_ok = (tv_weekly >= tv_weekly_clutter) & (dig_weekly >= dig_weekly_clutter)
+    
+    # CPR / CPT
     cpr = (tv_budget + dig_budget) / (cross_reach*100)
     cpt_dig = dig_budget / dig_trp
+    
     results.append({
         "Спліт ТБ": f"{split*100:.0f}%",
         "Бюджет ТБ": int(tv_budget),
         "Бюджет Digital": int(dig_budget),
         "TRP_TV": round(tv_trp,1),
         "TRP_Digital": round(dig_trp,1),
-        "Imp_Digital": int(dig_imp),
+        "Imp_Digital": round(dig_imp,1),
         "Reach_TV %": round(tv_reach*100,1),
         "Reach_Digital %": round(dig_reach*100,1),
         "Cross_Reach %": round(cross_reach*100,1),
@@ -150,5 +147,4 @@ st.download_button(
     file_name="media_split_modern.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-
 
