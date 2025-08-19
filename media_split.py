@@ -24,9 +24,9 @@ with st.sidebar:
     split_step_percent = st.selectbox("Крок спліту (%)", [5, 10, 15, 20])
     n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
 
-# --- Введення 5 точок TRP→Reach для ТБ і Digital ---
+# --- Введення точок для ТБ і Digital ---
 def input_points(media_name):
-    st.subheader(f"{media_name} — Введіть 5 точок TRP → Reach (%)")
+    st.subheader(f"{media_name} — Введіть 2-5 точок TRP → Reach (%)")
     trp_points = []
     reach_points = []
     for i in range(5):
@@ -41,10 +41,10 @@ def input_points(media_name):
         )
         trp_points.append(trp)
         reach_points.append(reach/100)
-    return CubicSpline(trp_points, reach_points), trp_points
+    return CubicSpline(trp_points, reach_points)
 
-tv_spline, tv_trp_points = input_points("ТБ")
-dig_spline, dig_trp_points = input_points("Digital")
+tv_spline = input_points("ТБ")
+dig_spline = input_points("Digital")
 
 # --- Генерація сплітів ---
 split_step = split_step_percent / 100.0
@@ -60,6 +60,7 @@ for i, split in enumerate(split_values, start=1):
     dig_imp = dig_budget / dig_cost_per_imp
     dig_trp = dig_imp / audience_size * 100
 
+    # --- Естимація Reach під розрахунковий TRP ---
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
     dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))
     cross_reach = tv_reach + dig_reach - tv_reach*dig_reach
@@ -102,7 +103,7 @@ df['Доля Digital %'] = df['Бюджет Digital'] / (df['Бюджет ТБ']
 if budget_warning:
     st.warning(f"⚠️ Мінімальний бюджет для досягнення конкурентного тиску: {int(min_needed_budget):,} ₴")
 
-# --- Визначення найкращої опції ---
+# --- Найкраща опція ---
 if df["Ефективний"].any():
     best_idx = df[df["Ефективний"]]["CPR"].idxmin()
 else:
@@ -157,13 +158,12 @@ def to_excel_with_charts(df):
     ws = wb.active
     ws.title = "Results"
 
-    # --- Додаємо дані ---
     for r in dataframe_to_rows(df, index=False, header=True):
         ws.append(r)
 
-    n_rows = df.shape[0] + 1  # включно з заголовком
+    n_rows = df.shape[0] + 1
 
-    # --- Стовпчаста гістограма долі бюджету ---
+    # Стовпчаста гістограма долі бюджету
     bar = BarChart()
     bar.type = "col"
     bar.title = "Долі бюджету по медіа"
@@ -172,16 +172,15 @@ def to_excel_with_charts(df):
     bar.style = 10
     bar.width = 20
     bar.height = 10
-
-    data = Reference(ws, min_col=df.columns.get_loc("Доля ТБ %")+1, max_col=df.columns.get_loc("Доля Digital %")+1,
+    data = Reference(ws, min_col=df.columns.get_loc("Доля ТБ %")+1,
+                     max_col=df.columns.get_loc("Доля Digital %")+1,
                      min_row=1, max_row=n_rows)
     categories = Reference(ws, min_col=1, min_row=2, max_row=n_rows)
     bar.add_data(data, titles_from_data=True)
     bar.set_categories(categories)
-    bar.shape = 4
     ws.add_chart(bar, "P2")
 
-    # --- Лінійний графік охоплення ---
+    # Лінійний графік охоплення
     line = LineChart()
     line.title = "Reach TV / Digital / Cross"
     line.y_axis.title = "Reach %"
@@ -189,7 +188,6 @@ def to_excel_with_charts(df):
     line.style = 12
     line.width = 20
     line.height = 10
-
     data = Reference(ws, min_col=df.columns.get_loc("Reach_TV %")+1,
                      max_col=df.columns.get_loc("Cross_Reach %")+1,
                      min_row=1, max_row=n_rows)
