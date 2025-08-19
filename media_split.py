@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize
+import io
 
 # --- Вхідні параметри ---
 st.title("📊 Оптимальний спліт ТБ + Digital")
@@ -68,17 +68,26 @@ st.dataframe(df.style.apply(highlight, axis=1))
 # --- Графік ---
 st.subheader("📈 Візуалізація сплітів")
 fig, ax = plt.subplots()
-ax.plot(df["Спліт ТБ"], [float(x[:-1]) for x in df["Крос-охоплення"]], marker="o")
+cross_values = [float(x[:-1]) for x in df["Крос-охоплення"]]
+colors = ["green" if x else "red" for x in df["Ефективний"]]
+ax.scatter(df["Спліт ТБ"], cross_values, c=colors, s=100)
 ax.set_ylabel("Крос-охоплення %")
 ax.set_xlabel("Спліт ТБ")
 ax.set_title("Крос-медійне охоплення залежно від спліта")
 plt.xticks(rotation=45)
 st.pyplot(fig)
 
-# --- Експорт ---
+# --- Експорт в Excel ---
+st.subheader("⬇️ Завантаження Excel")
+output = io.BytesIO()
+with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    df.to_excel(writer, index=False, sheet_name="Splits")
+    writer.save()
+output.seek(0)
+
 st.download_button(
-    "⬇️ Завантажити результати в Excel",
-    data=df.to_excel("results.xlsx", index=False, engine="openpyxl"),
+    label="Скачати Excel",
+    data=output,
     file_name="media_split.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
