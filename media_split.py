@@ -221,7 +221,13 @@ fig.add_trace(go.Bar(
     name="Діджитал",
     marker_color='red'
 ))
-fig.update_layout(barmode='stack', title="Розподіл бюджету (%)", xaxis_title="Опції", yaxis_title="Відсоток бюджету")
+fig.update_layout(
+    barmode='stack', 
+    title="Розподіл бюджету (%)", 
+    xaxis_title="Опції", 
+    yaxis_title="Відсоток бюджету",
+    xaxis={'dtick': 1} # Додано для відображення всіх цілих опцій на осі X
+)
 st.plotly_chart(fig)
 
 # Графік охоплення по опціях
