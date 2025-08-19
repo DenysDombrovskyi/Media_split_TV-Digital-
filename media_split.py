@@ -11,69 +11,108 @@ st.set_page_config(page_title="Media Split Dashboard", layout="wide")
 st.title("Media Split Dashboard")
 
 # --- Sidebar for inputs ---
-st.sidebar.header("Кампанія параметри")
+st.sidebar.header("Параметри кампанії")
 
-budget = st.sidebar.number_input("Бюджет кампанії", min_value=100_000, max_value=50_000_000, value=5_000_000, step=100_000)
+# Бюджет кампанії
+budget = st.sidebar.number_input("Бюджет кампанії (грн)", min_value=100_000, max_value=50_000_000, value=5_000_000, step=100_000)
+# Крок спліту
 split_step = st.sidebar.selectbox("Крок спліту (%)", [5, 10, 15, 20])
-tb_price = st.sidebar.number_input("Ціна 1 TRP ТБ (грн)", min_value=1_000, max_value=1_000_000, value=500)
-digital_price = st.sidebar.number_input("Ціна 1000 імпр. Діджитал (грн)", min_value=100, max_value=1_000_000, value=1000)
+# Ціна 1 TRP ТБ
+tb_price = st.sidebar.number_input("Ціна 1 TRP ТБ (грн)", min_value=1, max_value=1_000_000, value=500)
+# Ціна 1000 імпр. Діджитал
+digital_price = st.sidebar.number_input("Ціна 1000 імпр. Діджитал (грн)", min_value=1, max_value=1_000_000, value=1000)
+# Клаттер ТБ TRP
 tb_clutter = st.sidebar.number_input("Клаттер ТБ TRP", min_value=0, max_value=5000, value=300)
+# Клаттер Діджитал імпр.
 digital_clutter = st.sidebar.number_input("Клаттер Діджитал імпр.", min_value=0, max_value=5_000_000, value=500_000)
+# Кількість опцій для генерації
 num_options = st.sidebar.number_input("Кількість опцій", min_value=3, max_value=20, value=10)
 
 st.sidebar.header("Метод естимації охоплень")
+# Метод естимації охоплень
 est_method = st.sidebar.selectbox("Оберіть метод естимації", ["Логістична крива", "Апроксимація", "Лінійна (для тесту)"])
 st.sidebar.markdown("Більш точний метод: Логістична крива")
 
 # --- Input points for TV ---
 st.subheader("Точки для ТБ")
 tb_points = []
+# Збір точок для ТБ (ТРП та Охоплення %)
 for i in range(5):
     col1, col2 = st.columns(2)
-    trp = col1.number_input(f"ТРП точка {i+1} ТБ", min_value=1.0, max_value=10000.0, value=20*(i+1))
-    reach = col2.number_input(f"Охоплення % точка {i+1} ТБ", min_value=1.0, max_value=82.0, value=min(20*(i+1), 82))
+    trp = col1.number_input(f"ТРП точка {i+1} ТБ", min_value=1.0, max_value=10000.0, value=float(20*(i+1)))
+    reach = col2.number_input(f"Охоплення % точка {i+1} ТБ", min_value=1.0, max_value=82.0, value=float(min(20*(i+1), 82)))
     tb_points.append((trp, reach))
 
 # --- Input points for Digital ---
 st.subheader("Точки для Діджитал")
 digital_points = []
+# Збір точок для Діджитал (Імпр. та Охоплення %)
 for i in range(5):
     col1, col2 = st.columns(2)
-    imp = col1.number_input(f"Імпр. точка {i+1} Діджитал (тис.)", min_value=1.0, max_value=10000.0, value=100*(i+1))
-    reach = col2.number_input(f"Охоплення % точка {i+1} Діджитал", min_value=1.0, max_value=99.0, value=min(15*(i+1), 99))
+    imp = col1.number_input(f"Імпр. точка {i+1} Діджитал (тис.)", min_value=1.0, max_value=10000.0, value=float(100*(i+1)))
+    reach = col2.number_input(f"Охоплення % точка {i+1} Діджитал", min_value=1.0, max_value=99.0, value=float(min(15*(i+1), 99)))
     digital_points.append((imp, reach))
 
 # --- Function for estimation ---
 def estimate_reach(points, max_reach, method="Логістична крива"):
+    """
+    Оцінює охоплення на основі заданих точок та методу.
+    :param points: Список кортежів (значення, охоплення %)
+    :param max_reach: Максимальне можливе охоплення
+    :param method: Метод естимації ("Логістична крива", "Апроксимація", "Лінійна")
+    :return: Функція, яка приймає нове значення і повертає оцінене охоплення
+    """
     x = np.array([p[0] for p in points])
     y = np.array([p[1] for p in points])
     if method == "Логістична крива":
-        # Fit logistic curve: y = max_reach / (1 + exp(-k*(x-x0)))
         from scipy.optimize import curve_fit
+        # Функція логістичної кривої
         def logistic(x, k, x0):
             return max_reach / (1 + np.exp(-k*(x - x0)))
-        popt, _ = curve_fit(logistic, x, y, bounds=(0, [5., max(x)]))
+        # Підгонка кривої до точок
+        try:
+            popt, _ = curve_fit(logistic, x, y, bounds=(0, [5., max(x)*2])) # Збільшено верхню межу для x0
+        except RuntimeError:
+            st.warning("Не вдалося підігнати логістичну криву. Спробуйте змінити вхідні точки або метод естимації.")
+            # Повернення лінійної інтерполяції як резервного варіанту
+            f_linear = interp1d(x, y, kind='linear', fill_value="extrapolate")
+            return lambda x_new: np.clip(f_linear(x_new), 0, max_reach)
+
         def f(x_new):
             return np.clip(logistic(x_new, *popt), 0, max_reach)
         return f
     elif method == "Апроксимація":
+        # Кубічна інтерполяція
         f = interp1d(x, y, kind='cubic', fill_value=(y[0], max_reach), bounds_error=False)
         return lambda x_new: np.clip(f(x_new), 0, max_reach)
     else:  # Лінійна
+        # Лінійна інтерполяція
         f = interp1d(x, y, kind='linear', fill_value="extrapolate")
         return lambda x_new: np.clip(f(x_new), 0, max_reach)
 
+# Оцінка охоплення для ТБ та Діджитал
 tb_est = estimate_reach(tb_points, 82, est_method)
 digital_est = estimate_reach(digital_points, 99, est_method)
 
 # --- Generate options ---
 options = []
+# Генерація опцій розподілу бюджету
 for i in range(num_options):
-    tb_trp = (i+1) * split_step / 100 * (budget / tb_price)
-    digital_imp = (i+1) * split_step / 100 * (budget / digital_price)
+    # Розрахунок долі бюджету для поточної опції
+    budget_share = (i + 1) * split_step / 100
+    
+    # Розрахунок TRP ТБ та Impressions Діджитал
+    tb_trp = budget_share * (budget / tb_price)
+    digital_imp = budget_share * (budget / digital_price)
+
+    # Розрахунок охоплення для ТБ та Діджитал
     tb_reach = tb_est(tb_trp)
     digital_reach = digital_est(digital_imp)
+
+    # Розрахунок кросмедійного охоплення (формула охоплення для двох незалежних медіа)
     cross_reach = tb_reach/100 + digital_reach/100 - (tb_reach/100)*(digital_reach/100)
+    
+    # Додавання опції до списку
     options.append({
         "Опція": i+1,
         "TB TRP": tb_trp,
@@ -86,25 +125,64 @@ for i in range(num_options):
 df = pd.DataFrame(options)
 
 # --- Calculate efficiency ---
+# Додаємо стовпці для клатера
+df["TB Clutter TRP"] = tb_clutter
+df["Digital Clutter IMP (тис)"] = digital_clutter
+
+# Логіка ефективності: опція ефективна, якщо показники вище клатера
 df["Ефективний"] = (df["TB TRP"] >= tb_clutter) & (df["Digital IMP (тис)"] >= digital_clutter)
-df["CPR"] = budget / (df["TB TRP"] + df["Digital IMP (тис)"]/1000)
-best_idx = df[df["Ефективний"]]["CPR"].idxmin() if df["Ефективний"].any() else df["CPR"].idxmin()
-df["Best"] = False
-df.loc[best_idx, "Best"] = True
+
+# Розрахунок CPR (Cost Per Reach)
+# Перевірка ділення на нуль для CrossMedia Reach
+df["CPR"] = budget / df["CrossMedia Reach %"] if (df["CrossMedia Reach %"] != 0).all() else np.inf
+df.loc[df["CrossMedia Reach %"] == 0, "CPR"] = np.inf
+
+
+# Знаходження найкращої опції (ефективна і найнижчий CPR)
+effective_options_df = df[df["Ефективний"]]
+if not effective_options_df.empty:
+    # Якщо є ефективні опції, знаходимо найкращу серед них
+    best_idx = effective_options_df["CPR"].idxmin()
+else:
+    # Якщо ефективних опцій немає, вибираємо опцію з найнижчим CPR серед усіх (навіть неефективних)
+    best_idx = df["CPR"].idxmin()
+
+df["Найкраща"] = False
+df.loc[best_idx, "Найкраща"] = True
+
+# --- Display Best Option Summary ---
+st.subheader("Найкраща опція")
+best_option = df.loc[best_idx]
+st.markdown(f"""
+    **Опція {int(best_option['Опція'])}** (Найнижчий СПР серед ефективних):
+    * **TB TRP**: {best_option['TB TRP']:.2f}
+    * **Digital IMP (тис)**: {best_option['Digital IMP (тис)']:.2f}
+    * **CrossMedia Reach %**: {best_option['CrossMedia Reach %']:.2f}%
+    * **СПР**: {best_option['CPR']:.2f} грн за % охоплення
+""")
+st.markdown("---")
+
 
 # --- Display dataframe ---
 def highlight(row):
-    if row["Best"]:
-        return ['background-color: lightgreen']*len(row)
+    """
+    Функція для виділення рядків у DataFrame.
+    Виділяє найкращу опцію синім, неефективні - світло-червоним.
+    """
+    if row["Найкраща"]:
+        return ['background-color: lightblue']*len(row) # Синя заливка для найкращої опції
     elif not row["Ефективний"]:
-        return ['background-color: lightcoral']*len(row)
+        return ['background-color: lightcoral']*len(row) # Світло-червона для неефективних
     else:
         return ['']*len(row)
 
 st.subheader("Опції та ефективність")
+# Відображення DataFrame з застосованим стилем
 st.dataframe(df.style.apply(highlight, axis=1))
+st.markdown("---")
 
 # --- Plotly graphs ---
+# Графік розподілу бюджету
 fig = go.Figure()
 fig.add_trace(go.Bar(
     x=df["Опція"],
@@ -121,6 +199,7 @@ fig.add_trace(go.Bar(
 fig.update_layout(barmode='stack', title="Розподіл бюджету (долі)", xaxis_title="Опції", yaxis_title="Доля бюджету")
 st.plotly_chart(fig)
 
+# Графік охоплення по опціях
 fig2 = go.Figure()
 fig2.add_trace(go.Scatter(x=df["Опція"], y=df["TB Reach %"], name="ТБ", mode="lines+markers"))
 fig2.add_trace(go.Scatter(x=df["Опція"], y=df["Digital Reach %"], name="Діджитал", mode="lines+markers"))
@@ -135,13 +214,25 @@ with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
     workbook  = writer.book
     worksheet = writer.sheets["Options"]
 
-    # Create charts
+    # Create charts in Excel
+    # Графік розподілу бюджету
     chart = workbook.add_chart({'type': 'column', 'subtype': 'stacked'})
-    chart.add_series({'name': 'ТБ', 'categories': f'=Options!$A$2:$A${num_options+1}', 'values': f'=Options!$B$2:$B${num_options+1}', 'fill': {'color': 'black'}})
-    chart.add_series({'name': 'Діджитал', 'categories': f'=Options!$A$2:$A${num_options+1}', 'values': f'=Options!$D$2:$D${num_options+1}', 'fill': {'color': 'red'}})
+    # Додаємо серії даних для ТБ та Діджитал
+    chart.add_series({
+        'name': 'ТБ',
+        'categories': f'=Options!$A$2:$A${num_options+1}',
+        'values': f'=Options!$B$2:$B${num_options+1}',
+        'fill': {'color': 'black'}
+    })
+    chart.add_series({
+        'name': 'Діджитал',
+        'categories': f'=Options!$A$2:$A${num_options+1}',
+        'values': f'=Options!$D$2:$D${num_options+1}',
+        'fill': {'color': 'red'}
+    })
     chart.set_title({'name': 'Розподіл бюджету'})
     chart.set_y_axis({'name': 'Доля бюджету'})
-    worksheet.insert_chart('H2', chart)
+    worksheet.insert_chart('H2', chart) # Розміщення графіку в Excel
 
     writer.save()
 st.download_button("⬇️ Завантажити результати в Excel", data=output.getvalue(), file_name="media_split.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
