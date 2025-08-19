@@ -33,7 +33,7 @@ def input_points(media_name):
         cols = st.columns(2)
         trp = cols[0].number_input(
             f"{media_name} TRP точка {i+1}", 
-            min_value=1.0, max_value=6000.0, value=50.0*(i+1), step=10.0
+            min_value=1.0, max_value=10000.0, value=50.0*(i+1), step=10.0
         )
         reach = cols[1].number_input(
             f"{media_name} Reach % точка {i+1}", 
