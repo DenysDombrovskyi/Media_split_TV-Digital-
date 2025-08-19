@@ -6,14 +6,15 @@ import plotly.express as px
 import io
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
-from openpyxl.chart import BarChart, LineChart, Reference, Series
-from openpyxl.utils.dataframe import dataframe_to_rows  # <- Важливо!
+from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.chart.shapes import GraphicalProperties
 
 # --- Налаштування сторінки ---
 st.set_page_config(page_title="Media Split Optimizer", layout="wide")
 st.title("🎯 Media Split Optimizer — ТБ + Digital")
 
-# --- Sidebar для параметрів ---
+# --- Sidebar параметри ---
 with st.sidebar:
     st.header("Параметри кампанії")
     budget = st.slider("Загальний бюджет (₴)", 100_000, 50_000_000, 5_000_000, step=100_000)
@@ -26,7 +27,7 @@ with st.sidebar:
     split_step_percent = st.selectbox("Крок спліту (%)", [5, 10, 15, 20])
     n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
 
-# --- Введення TRP → Reach ---
+# --- TRP → Reach ТБ ---
 with st.expander("TRP → Reach ТБ (5 точок)"):
     tv_trp_points, tv_reach_points = [], []
     for i in range(5):
@@ -36,6 +37,7 @@ with st.expander("TRP → Reach ТБ (5 точок)"):
         tv_trp_points.append(trp)
         tv_reach_points.append(reach/100)
 
+# --- TRP → Reach Digital ---
 with st.expander("TRP → Reach Digital (5 точок)"):
     dig_trp_points, dig_reach_points = [], []
     for i in range(5):
@@ -51,8 +53,7 @@ dig_spline = CubicSpline(dig_trp_points, dig_reach_points)
 
 # --- Генерація сплітів ---
 split_step = split_step_percent / 100.0
-split_values = np.arange(split_step, 1.0, split_step)
-split_values = split_values[:n_options]
+split_values = np.arange(split_step, 1.0, split_step)[:n_options]
 
 results = []
 budget_warning = False
@@ -163,7 +164,6 @@ for i, cell in enumerate(ws[1], start=1):
     if cell.value == "CPR":
         cpr_col = i
         break
-
 if cpr_col:
     min_cpr = min(df["CPR"])
     fill = PatternFill(start_color="00FFFF00", end_color="00FFFF00", fill_type="solid")
@@ -172,12 +172,13 @@ if cpr_col:
             for col in range(1, ws.max_column+1):
                 ws.cell(row=row, column=col).fill = fill
 
-# --- Створення графіків у Excel ---
+# --- Створення графіків в стилі інтерфейсу ---
 # 1. Stacked Bar Budget
 bar_chart = BarChart()
-bar_chart.title = "Долі бюджету по медіа"
 bar_chart.type = "col"
+bar_chart.grouping = "stacked"
 bar_chart.style = 10
+bar_chart.title = "Долі бюджету по медіа"
 bar_chart.y_axis.title = "Доля %"
 bar_chart.x_axis.title = "Опції"
 
@@ -185,6 +186,9 @@ data = Reference(ws, min_col=ws.max_column-1, min_row=1, max_col=ws.max_column, 
 cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
 bar_chart.add_data(data, titles_from_data=True)
 bar_chart.set_categories(cats)
+
+bar_chart.ser[0].graphicalProperties = GraphicalProperties(solidFill="000000")  # ТБ чорний
+bar_chart.ser[1].graphicalProperties = GraphicalProperties(solidFill="FF0000")  # Digital червоний
 ws.add_chart(bar_chart, "O2")
 
 # 2. Line Chart Reach
@@ -192,9 +196,17 @@ line_chart = LineChart()
 line_chart.title = "Reach TV / Digital / Cross"
 line_chart.y_axis.title = "Reach %"
 line_chart.x_axis.title = "Опції"
+
 data2 = Reference(ws, min_col=8, min_row=1, max_col=10, max_row=ws.max_row)
 line_chart.add_data(data2, titles_from_data=True)
 line_chart.set_categories(cats)
+
+line_chart.ser[0].graphicalProperties = GraphicalProperties(solidFill="000000")  # ТБ чорний
+line_chart.ser[1].graphicalProperties = GraphicalProperties(solidFill="FF0000")  # Digital червоний
+line_chart.ser[2].graphicalProperties = GraphicalProperties(solidFill="0000FF")  # Cross синій
+for s in line_chart.ser:
+    s.marker.symbol = "circle"
+    s.marker.size = 6
 ws.add_chart(line_chart, "O20")
 
 # --- Скачування ---
@@ -206,5 +218,6 @@ st.download_button(
     file_name="media_split_with_charts.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
 
 
