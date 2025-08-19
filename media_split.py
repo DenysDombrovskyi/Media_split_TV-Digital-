@@ -109,10 +109,6 @@ col1.metric("Найнижчий CPR", f"{best_option['CPR']:.2f}")
 col2.metric("Cross Reach %", f"{best_option['Cross_Reach %']:.1f}%")
 col3.metric("TRP Digital", f"{best_option['TRP_Digital']:.1f}")
 
-# --- Чекбокси для точок ---
-show_tv_points = st.checkbox("Показувати точки ТБ", value=True)
-show_dig_points = st.checkbox("Показувати точки Digital", value=True)
-
 # --- Графік долей бюджету ---
 st.subheader("📊 Долі бюджету")
 df_budget_plot = df.melt(id_vars=["Опція"], value_vars=["Доля ТБ %", "Доля Digital %"],
@@ -125,35 +121,15 @@ fig_budget.update_yaxes(title_text="Доля бюджету (%)")
 fig_budget.update_traces(texttemplate="%{text:.1f}%", textposition="inside")
 st.plotly_chart(fig_budget, use_container_width=True)
 
-# --- Графік охоплення ---
+# --- Графік охоплення без точок ---
 st.subheader("📈 Охоплення")
-fig_reach = px.line(df, x="Опція", y=["Reach_TV %","Reach_Digital %","Cross_Reach %"],
-                    markers=True, title="Reach TV / Digital / Cross")
-
-if show_tv_points:
-    tv_reach_pts = [tv_spline(trp)*100 for trp in tv_trp_points]
-    fig_reach.add_scatter(
-        x=[f"Опція {i+1}" for i in range(5)],
-        y=tv_reach_pts,
-        mode="markers+text",
-        name="ТБ точки",
-        marker=dict(symbol="circle", color="black", size=10),
-        text=[f"{r:.1f}%" for r in tv_reach_pts],
-        textposition="top center"
-    )
-
-if show_dig_points:
-    dig_reach_pts = [dig_spline(trp)*100 for trp in dig_trp_points]
-    fig_reach.add_scatter(
-        x=[f"Опція {i+1}" for i in range(5)],
-        y=dig_reach_pts,
-        mode="markers+text",
-        name="Digital точки",
-        marker=dict(symbol="x", color="red", size=10),
-        text=[f"{r:.1f}%" for r in dig_reach_pts],
-        textposition="bottom center"
-    )
-
+fig_reach = px.line(
+    df, 
+    x="Опція", 
+    y=["Reach_TV %","Reach_Digital %","Cross_Reach %"],
+    markers=True, 
+    title="Reach TV / Digital / Cross"
+)
 st.plotly_chart(fig_reach, use_container_width=True)
 
 # --- Таблиця ---
