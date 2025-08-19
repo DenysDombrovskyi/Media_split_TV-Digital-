@@ -7,7 +7,7 @@ from scipy.interpolate import CubicSpline
 from openpyxl import load_workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 
-st.title("📊 Оптимальний спліт ТБ + Digital з CPR і графіком Excel")
+st.title("📊 Оптимальний спліт ТБ + Digital з CPR і графіками Excel")
 
 # --- Введення точок охоплення ---
 st.subheader("Введіть 5 точок TRP → Reach % для ТБ")
@@ -147,19 +147,21 @@ budget_chart.type = "col"
 budget_chart.title = "Розподіл бюджету ТБ/Digital"
 budget_chart.y_axis.title = "Бюджет"
 budget_chart.x_axis.title = "Спліт ТБ"
+budget_chart.overlap = 100
+budget_chart.grouping = "stacked"
+
 data = Reference(ws, min_col=2, max_col=3, min_row=1, max_row=ws.max_row)
 cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
 budget_chart.add_data(data, titles_from_data=True)
 budget_chart.set_categories(cats)
-budget_chart.shape = 4
-budget_chart.overlap = 100
 ws.add_chart(budget_chart, "L2")
 
-# --- Лінійний графік охоплення ---
+# --- Лінійний графік охоплення з кросмедіа ---
 reach_chart = LineChart()
-reach_chart.title = "Охоплення по сплітах"
+reach_chart.title = "Охоплення по сплітах (кросмедійне)"
 reach_chart.y_axis.title = "Reach %"
 reach_chart.x_axis.title = "Спліт ТБ"
+
 data = Reference(ws, min_col=7, max_col=9, min_row=1, max_row=ws.max_row)
 cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
 reach_chart.add_data(data, titles_from_data=True)
@@ -176,5 +178,4 @@ st.download_button(
     file_name="media_split_chart.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-
 
