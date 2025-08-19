@@ -6,6 +6,7 @@ import plotly.express as px
 import io
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.chart import LineChart, Reference, BarChart
 
 st.set_page_config(page_title="Media Split Dashboard", layout="wide")
 st.title("🎯 Media Split Dashboard — ТБ + Digital")
@@ -121,7 +122,7 @@ fig_budget.update_yaxes(title_text="Доля бюджету (%)")
 fig_budget.update_traces(texttemplate="%{text:.1f}%", textposition="inside")
 st.plotly_chart(fig_budget, use_container_width=True)
 
-# --- Графік охоплення без точок ---
+# --- Графік охоплення ---
 st.subheader("📈 Охоплення")
 fig_reach = px.line(
     df, 
@@ -143,21 +144,61 @@ def highlight_rows(row):
         return ['background-color: salmon']*len(row)
 st.dataframe(df.style.apply(highlight_rows, axis=1))
 
-# --- Excel Export ---
-def to_excel(df):
+# --- Excel Export з графіками ---
+def to_excel_with_charts(df):
     output = io.BytesIO()
     wb = Workbook()
     ws = wb.active
     ws.title = "Results"
+
+    # --- Додаємо дані ---
     for r in dataframe_to_rows(df, index=False, header=True):
         ws.append(r)
+
+    n_rows = df.shape[0] + 1  # включно з заголовком
+
+    # --- Стовпчаста гістограма долі бюджету ---
+    bar = BarChart()
+    bar.type = "col"
+    bar.title = "Долі бюджету по медіа"
+    bar.y_axis.title = "Доля (%)"
+    bar.x_axis.title = "Опція"
+    bar.style = 10
+    bar.width = 20
+    bar.height = 10
+
+    data = Reference(ws, min_col=df.columns.get_loc("Доля ТБ %")+1, max_col=df.columns.get_loc("Доля Digital %")+1,
+                     min_row=1, max_row=n_rows)
+    categories = Reference(ws, min_col=1, min_row=2, max_row=n_rows)
+    bar.add_data(data, titles_from_data=True)
+    bar.set_categories(categories)
+    bar.shape = 4
+    ws.add_chart(bar, "P2")
+
+    # --- Лінійний графік охоплення ---
+    line = LineChart()
+    line.title = "Reach TV / Digital / Cross"
+    line.y_axis.title = "Reach %"
+    line.x_axis.title = "Опція"
+    line.style = 12
+    line.width = 20
+    line.height = 10
+
+    data = Reference(ws, min_col=df.columns.get_loc("Reach_TV %")+1,
+                     max_col=df.columns.get_loc("Cross_Reach %")+1,
+                     min_row=1, max_row=n_rows)
+    line.add_data(data, titles_from_data=True)
+    line.set_categories(categories)
+    ws.add_chart(line, "P20")
+
     wb.save(output)
     return output
 
 st.download_button(
-    label="⬇️ Завантажити результати в Excel",
-    data=to_excel(df),
-    file_name="media_split_results.xlsx",
+    label="⬇️ Завантажити результати в Excel з графіками",
+    data=to_excel_with_charts(df),
+    file_name="media_split_results_with_charts.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
 
