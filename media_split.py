@@ -140,7 +140,7 @@ st.subheader("⬇️ Завантаження Excel з виділенням на
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="Splits")
-    writer.save()
+# ❌ writer.save() не потрібен
 
 output.seek(0)
 wb = load_workbook(output)
