@@ -16,7 +16,7 @@ audience_size = st.sidebar.number_input("Розмір аудиторії Digital
 tv_cost_per_trp = st.sidebar.number_input("Вартість 1 TRP ТБ", value=500.0)
 dig_cost_per_imp = st.sidebar.number_input("Вартість 1 тис. імпресій Digital", value=5.0)
 tv_weekly_clutter = st.sidebar.number_input("Конкурентний тиск ТБ (ТРП/тиждень)", value=150.0)
-dig_weekly_clutter = st.sidebar.number_input("Конкурентний тиск Digital (тис. імпресій/тиждень)", value=300.0)
+dig_weekly_clutter = st.sidebar.number_input("Конкурентний тиск Digital (TRP/тиждень)", value=300.0)
 n_options = st.sidebar.slider("Кількість варіантів сплітів", 5, 15, 10)
 
 # --- Expander TRP → Reach для ТБ ---
@@ -45,6 +45,9 @@ dig_spline = CubicSpline(dig_trp_points, dig_reach_points)
 
 # --- Генерація варіантів ---
 results = []
+budget_warning = False
+min_needed_budget = 0
+
 for split in np.linspace(0.1, 0.9, n_options):
     tv_budget = budget * split
     dig_budget = budget * (1 - split)
@@ -65,8 +68,13 @@ for split in np.linspace(0.1, 0.9, n_options):
     tv_weekly = tv_trp / flight_weeks
     dig_weekly = dig_trp / flight_weeks
     
-    # Ефективність
+    # Перевірка бюджетної ефективності
     overall_ok = (tv_weekly >= tv_weekly_clutter) & (dig_weekly >= dig_weekly_clutter)
+    if not overall_ok:
+        budget_warning = True
+        min_tv_budget = tv_weekly_clutter * flight_weeks * tv_cost_per_trp
+        min_dig_budget = dig_weekly_clutter * flight_weeks * dig_cost_per_imp * audience_size / 100
+        min_needed_budget = max(min_needed_budget, min_tv_budget + min_dig_budget)
     
     # CPR / CPT
     cpr = (tv_budget + dig_budget) / (cross_reach*100)
@@ -88,7 +96,12 @@ for split in np.linspace(0.1, 0.9, n_options):
         "CPT_Digital": round(cpt_dig,2),
         "Ефективний": overall_ok
     })
+
 df = pd.DataFrame(results)
+
+# --- Попередження при недостатньому бюджеті ---
+if budget_warning:
+    st.warning(f"⚠️ Для досягнення конкурентного тиску потрібно щонайменше {int(min_needed_budget):,} грн. Можна збільшити бюджет або скоротити тривалість флайту.")
 
 # --- Найкращий варіант ---
 best_idx = df[df["Ефективний"]]["CPR"].idxmin() if df[df["Ефективний"]].shape[0]>0 else df["CPR"].idxmin()
@@ -147,4 +160,5 @@ st.download_button(
     file_name="media_split_modern.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
 
