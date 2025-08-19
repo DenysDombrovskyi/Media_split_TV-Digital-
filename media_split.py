@@ -194,15 +194,12 @@ def highlight(row):
     else: # Якщо опція неефективна
         return ['background-color: lightcoral']*len(row) # Світло-червона для неефективних
 
-# Apply styling to the full DataFrame once
-styled_full_df = df.style.apply(highlight, axis=1)
-
 # --- Display Effective Options ---
 st.subheader("Ефективні опції (показники тижневого тиску вище клатера)")
-# Фільтруємо вже стилізований DataFrame, щоб показати лише ефективні опції
-effective_styled_df = styled_full_df[df["Ефективний"]] 
-if not effective_styled_df.empty:
-    st.dataframe(effective_styled_df) # Відображаємо вже стилізований ефективний DataFrame
+# Фільтруємо DataFrame, а потім застосовуємо стилізацію
+filtered_effective_df = df[df["Ефективний"]]
+if not filtered_effective_df.empty:
+    st.dataframe(filtered_effective_df.style.apply(highlight, axis=1))
 else:
     st.info("Немає опцій, що відповідають критеріям клатера для обох медіа.")
 st.markdown("---")
@@ -210,8 +207,8 @@ st.markdown("---")
 
 # --- Display all options dataframe ---
 st.subheader("Усі опції та ефективність")
-# Відображення вже стилізованого повного DataFrame
-st.dataframe(styled_full_df)
+# Застосовуємо стилізацію до повного DataFrame
+st.dataframe(df.style.apply(highlight, axis=1))
 st.markdown("---")
 
 # --- Plotly graphs ---
