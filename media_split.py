@@ -33,7 +33,8 @@ num_options = st.sidebar.number_input("Кількість опцій", min_value
 st.sidebar.header("Метод естимації охоплень")
 # Метод естимації охоплень
 est_method = st.sidebar.selectbox("Оберіть метод естимації", ["Логістична крива", "Апроксимація", "Лінійна (для тесту)"])
-st.sidebar.markdown("Більш точний метод: Логістична крива")
+# Змінено підпис для методу естимації
+st.sidebar.markdown("Найбільш точний метод: Апроксимація")
 
 # --- Input points for TV ---
 st.subheader("Точки для ТБ")
@@ -145,10 +146,14 @@ df = pd.DataFrame(options)
 df["TB Clutter TRP"] = tb_clutter
 df["Digital Clutter IMP (тис)"] = digital_clutter
 
+# Додаємо стовпець "TB TRP (тижневий)"
+df["TB TRP (тижневий)"] = df["TB TRP"] / num_weeks_on_air
+# Додаємо стовпець "Digital IMP (тижневий)"
+df["Digital IMP (тижневий)"] = df["Digital IMP (тис)"] / num_weeks_on_air
+
 # Логіка ефективності: опція ефективна, якщо тижневі показники вище клатера
-# Поділяємо загальний TRP та IMP на кількість тижнів для порівняння з тижневим клатером
-df["Ефективний"] = ( (df["TB TRP"] / num_weeks_on_air) >= tb_clutter) & \
-                    ( (df["Digital IMP (тис)"] / num_weeks_on_air) >= digital_clutter)
+df["Ефективний"] = (df["TB TRP (тижневий)"] >= tb_clutter) & \
+                    (df["Digital IMP (тижневий)"] >= digital_clutter)
 
 # Розрахунок CPR (Cost Per Reach)
 # Перевірка ділення на нуль для CrossMedia Reach
@@ -175,7 +180,9 @@ best_option = df.loc[best_idx]
 st.markdown(f"""
     **Опція {int(best_option['Опція'])}** (Найнижчий СПР серед ефективних):
     * **TB TRP**: {best_option['TB TRP']:.2f} (загальний)
+    * **TB TRP (тижневий)**: {best_option['TB TRP (тижневий)']:.2f}
     * **Digital IMP (тис)**: {best_option['Digital IMP (тис)']:.2f} (загальні)
+    * **Digital IMP (тижневий)**: {best_option['Digital IMP (тижневий)']:.2f}
     * **CrossMedia Reach %**: {best_option['CrossMedia Reach %']:.2f}%
     * **СПР**: {best_option['CPR']:.2f} грн за % охоплення
 """)
@@ -244,8 +251,12 @@ fig2.update_layout(title="Охоплення по опціях", xaxis_title="О
 st.plotly_chart(fig2)
 
 # --- Export to Excel ---
-output = BytesIO()
-with pd.ExcelWriter(output, engine='openpyxl') as writer: # Змінено рушій на 'openpyxl'
+output_excel = BytesIO()
+with pd.ExcelWriter(output_excel, engine='openpyxl') as writer: # Змінено рушій на 'openpyxl'
     df.to_excel(writer, index=False, sheet_name="Options")
     # Код для створення діаграм у Excel було видалено, щоб уникнути помилок з xlsxwriter
-st.download_button("⬇️ Завантажити результати в Excel", data=output.getvalue(), file_name="media_split.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+st.download_button("⬇️ Завантажити результати в Excel", data=output_excel.getvalue(), file_name="media_split.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# --- Export to CSV ---
+output_csv = df.to_csv(index=False).encode('utf-8')
+st.download_button("⬇️ Завантажити результати в CSV", data=output_csv, file_name="media_split.csv", mime="text/csv")
