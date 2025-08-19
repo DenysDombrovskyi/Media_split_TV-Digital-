@@ -236,3 +236,4 @@ with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
 
     # writer.save() # Видалено, оскільки 'with' оператор автоматично зберігає та закриває
 st.download_button("⬇️ Завантажити результати в Excel", data=output.getvalue(), file_name="media_split.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
