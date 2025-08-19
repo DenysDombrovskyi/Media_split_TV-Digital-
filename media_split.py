@@ -1,55 +1,50 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import io
 from scipy.interpolate import CubicSpline
-from openpyxl import load_workbook
+import plotly.express as px
+import io
+from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 
-st.title("📊 Оптимальний спліт ТБ + Digital з CPR, CPT та графіками Excel")
+st.set_page_config(page_title="Media Split Optimizer", layout="wide")
 
-# --- Введення точок охоплення ТБ ---
-st.subheader("Введіть 5 точок TRP → Reach % для ТБ")
-tv_trp_points, tv_reach_points = [], []
-for i in range(5):
-    col1, col2 = st.columns(2)
-    trp = col1.number_input(f"TRP ТБ, точка {i+1}", min_value=0.0, value=float(i*50+50))
-    reach = col2.number_input(f"Reach_TV %, точка {i+1}", min_value=0.0, max_value=100.0, value=float(i*10+20))
-    tv_trp_points.append(trp)
-    tv_reach_points.append(reach/100)
+st.title("📊 Оптимальний спліт ТБ + Digital (сучасний інтерфейс)")
 
-# --- Введення Digital ---
-st.subheader("Введіть 5 точок TRP → Reach % для Digital")
-audience_size = st.number_input("Розмір аудиторії Digital (тис.)", min_value=1.0, value=1000.0)
-dig_trp_points, dig_reach_points = [], []
-for i in range(5):
-    col1, col2 = st.columns(2)
-    trp = col1.number_input(f"TRP Digital, точка {i+1}", min_value=0.0, value=float(i*10+10))
-    reach = col2.number_input(f"Reach_Digital %, точка {i+1}", min_value=0.0, max_value=100.0, value=float(i*5+10))
-    dig_trp_points.append(trp)
-    dig_reach_points.append(reach/100)
+# --- Введення даних ТБ ---
+with st.expander("Введіть 5 точок TRP → Reach % для ТБ"):
+    tv_trp_points, tv_reach_points = [], []
+    for i in range(5):
+        col1, col2 = st.columns(2)
+        trp = col1.slider(f"TRP ТБ, точка {i+1}", 0.0, 500.0, float(i*50+50))
+        reach = col2.slider(f"Reach_TV %, точка {i+1}", 0.0, 100.0, float(i*10+20))
+        tv_trp_points.append(trp)
+        tv_reach_points.append(reach/100)
+
+# --- Введення даних Digital ---
+with st.expander("Введіть 5 точок TRP → Reach % для Digital"):
+    audience_size = st.number_input("Розмір аудиторії Digital (тис.)", min_value=1.0, value=1000.0)
+    dig_trp_points, dig_reach_points = [], []
+    for i in range(5):
+        col1, col2 = st.columns(2)
+        trp = col1.slider(f"TRP Digital, точка {i+1}", 0.0, 500.0, float(i*10+10))
+        reach = col2.slider(f"Reach_Digital %, точка {i+1}", 0.0, 100.0, float(i*5+10))
+        dig_trp_points.append(trp)
+        dig_reach_points.append(reach/100)
 
 # --- Інтерполяція ---
 tv_spline = CubicSpline(tv_trp_points, tv_reach_points)
 dig_spline = CubicSpline(dig_trp_points, dig_reach_points)
 
-# --- Параметри бюджету та тривалості ---
+# --- Параметри бюджету ---
 st.subheader("Параметри бюджету та тривалості")
-budget = st.number_input("Загальний бюджет", min_value=1000, step=1000, value=50000)
-flight_weeks = st.number_input("Тривалість флайту (тижні)", min_value=1, value=4)
-tv_cost_per_trp = st.number_input("Вартість 1 TRP в ТБ", value=500.0)
-dig_cost_per_imp = st.number_input("Вартість 1 тис. імпресій в Digital", value=5.0)
+budget = st.slider("Загальний бюджет", 1000, 200000, 50000, step=1000)
+flight_weeks = st.slider("Тривалість флайту (тижні)", 1, 12, 4)
+tv_cost_per_trp = st.number_input("Вартість 1 TRP ТБ", value=500.0)
+dig_cost_per_imp = st.number_input("Вартість 1 тис. імпресій Digital", value=5.0)
 tv_weekly_clutter = st.number_input("Конкурентний тиск ТБ (ТРП/тиждень)", value=150.0)
 dig_weekly_clutter = st.number_input("Конкурентний тиск Digital (тис. імпресій/тиждень)", value=300.0)
 n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
-
-# --- Мінімальний бюджет ---
-min_budget_tv = tv_weekly_clutter * flight_weeks * tv_cost_per_trp
-min_budget_dig = dig_weekly_clutter * flight_weeks * dig_cost_per_imp / 1000
-min_total_budget = min_budget_tv + min_budget_dig
-if budget < min_total_budget:
-    st.warning(f"❌ Поточний бюджет ({int(budget)}) замалий. Рекомендований мінімальний бюджет: {int(min_total_budget)}")
 
 # --- Генерація варіантів ---
 results = []
@@ -59,22 +54,18 @@ for split in np.linspace(0.1, 0.9, n_options):
 
     tv_trp = tv_budget / tv_cost_per_trp
     dig_imp = dig_budget / dig_cost_per_imp * 1000
-    dig_trp = dig_imp / audience_size * 100  # конвертація імпресій у TRP Digital
+    dig_trp = dig_imp / audience_size * 100
 
-    # --- Оцінка Reach ---
     tv_reach = float(np.clip(tv_spline(tv_trp), 0, 0.82))
-    dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))  # максимум 99%
-    cross_reach = tv_reach + dig_reach - tv_reach * dig_reach
+    dig_reach = float(np.clip(dig_spline(dig_trp), 0, 0.99))
+    cross_reach = tv_reach + dig_reach - tv_reach*dig_reach
 
     tv_weekly = tv_trp / flight_weeks
     dig_weekly = dig_trp / flight_weeks
+    overall_ok = (tv_weekly >= tv_weekly_clutter) & (dig_weekly >= dig_weekly_clutter)
 
-    tv_ok = tv_weekly >= tv_weekly_clutter
-    dig_ok = dig_weekly >= dig_weekly_clutter
-    overall_ok = tv_ok and dig_ok
-
-    cpr = (tv_budget + dig_budget) / (cross_reach*100)  # CPR за спліт
-    cpt_dig = dig_budget / dig_trp  # CPT Digital
+    cpr = (tv_budget + dig_budget) / (cross_reach*100)
+    cpt_dig = dig_budget / dig_trp
 
     results.append({
         "Спліт ТБ": f"{split*100:.0f}%",
@@ -95,90 +86,47 @@ for split in np.linspace(0.1, 0.9, n_options):
 
 df = pd.DataFrame(results)
 
-# --- Підсвітка ---
-df["Тиск_ок"] = (df["Тиск ТБ/тижд"] >= tv_weekly_clutter) & (df["Тиск Digital/тижд"] >= dig_weekly_clutter)
-if df[df["Тиск_ок"]].shape[0] > 0:
-    min_cpr_idx = df[df["Тиск_ок"]]["CPR"].idxmin()
-else:
-    min_cpr_idx = None
+# --- Найкращий варіант ---
+best_idx = df[df["Ефективний"]]["CPR"].idxmin() if df[df["Ефективний"]].shape[0]>0 else df["CPR"].idxmin()
+best_option = df.loc[best_idx]
 
+# --- Вивід карток ---
+st.subheader("🏆 Найкращий варіант спліту")
+col1, col2, col3 = st.columns(3)
+col1.metric("Найнижчий CPR", f"{best_option['CPR']:.2f}")
+col2.metric("Cross Reach %", f"{best_option['Cross_Reach %']:.1f}%")
+col3.metric("TRP Digital", f"{best_option['TRP_Digital']:.1f}")
+
+# --- Таблиця ---
 def highlight(row):
-    if row.name == min_cpr_idx:
+    if row.name == best_idx:
         return ["background-color: deepskyblue"]*len(row)
-    color = "background-color: lightgreen" if row["Ефективний"] else "background-color: lightcoral"
+    color = "lightgreen" if row["Ефективний"] else "lightcoral"
     return [color]*len(row)
-
-st.subheader("Результати сплітів")
+st.subheader("Результати всіх варіантів")
 st.dataframe(df.style.apply(highlight, axis=1))
 
-# --- Stacked графік бюджету ---
-st.subheader("📊 Розподіл бюджету по варіантах спліту (stacked)")
-fig, ax = plt.subplots(figsize=(10,5))
-x = np.arange(len(df))
-ax.bar(x, df["Бюджет ТБ"], label="ТБ")
-ax.bar(x, df["Бюджет Digital"], bottom=df["Бюджет ТБ"], label="Digital")
-ax.set_xticks(x)
-ax.set_xticklabels(df["Спліт ТБ"])
-ax.set_ylabel("Бюджет")
-ax.set_title("Розподіл бюджету по сплітах (stacked)")
-ax.legend()
-plt.xticks(rotation=45)
-st.pyplot(fig)
+# --- Plotly графіки ---
+st.subheader("📊 Розподіл бюджету по сплітах")
+fig_budget = px.bar(df, x="Спліт ТБ", y=["Бюджет ТБ","Бюджет Digital"], 
+                    title="Розподіл бюджету (stacked)", barmode="stack")
+st.plotly_chart(fig_budget, use_container_width=True)
 
-# --- Лінійний графік охоплення ---
-st.subheader("📈 Охоплення по всіх варіантах спліту")
-fig2, ax2 = plt.subplots(figsize=(10,5))
-ax2.plot(df["Спліт ТБ"], df["Reach_TV %"], marker='o', label="Reach_TV %")
-ax2.plot(df["Спліт ТБ"], df["Reach_Digital %"], marker='o', label="Reach_Digital %")
-ax2.plot(df["Спліт ТБ"], df["Cross_Reach %"], marker='o', label="Cross_Reach %")
-ax2.set_ylabel("Охоплення %")
-ax2.set_title("Кросмедійне та медіа охоплення")
-ax2.legend()
-plt.xticks(rotation=45)
-st.pyplot(fig2)
+st.subheader("📈 Охоплення по всіх варіантах")
+fig_reach = px.line(df, x="Спліт ТБ", y=["Reach_TV %","Reach_Digital %","Cross_Reach %"],
+                    markers=True, title="Reach TV/Digital/Cross")
+st.plotly_chart(fig_reach, use_container_width=True)
 
-# --- Excel експорт ---
+# --- Excel download ---
 st.subheader("⬇️ Завантаження Excel з графіками")
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="Splits")
-
 output.seek(0)
-wb = load_workbook(output)
-ws = wb["Splits"]
-
-# Stacked bar chart бюджету
-budget_chart = BarChart()
-budget_chart.type = "col"
-budget_chart.title = "Розподіл бюджету ТБ/Digital"
-budget_chart.y_axis.title = "Бюджет"
-budget_chart.x_axis.title = "Спліт ТБ"
-budget_chart.overlap = 100
-budget_chart.grouping = "stacked"
-data = Reference(ws, min_col=2, max_col=3, min_row=1, max_row=ws.max_row)
-cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
-budget_chart.add_data(data, titles_from_data=True)
-budget_chart.set_categories(cats)
-ws.add_chart(budget_chart, "L2")
-
-# Лінійний графік охоплення
-reach_chart = LineChart()
-reach_chart.title = "Охоплення по сплітах"
-reach_chart.y_axis.title = "Reach %"
-reach_chart.x_axis.title = "Спліт ТБ"
-data = Reference(ws, min_col=7, max_col=9, min_row=1, max_row=ws.max_row)  # Reach_TV %, Reach_Digital %, Cross_Reach %
-cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
-reach_chart.add_data(data, titles_from_data=True)
-reach_chart.set_categories(cats)
-ws.add_chart(reach_chart, "L20")
-
-output_chart = io.BytesIO()
-wb.save(output_chart)
-output_chart.seek(0)
-
 st.download_button(
-    label="Скачати Excel з графіками",
-    data=output_chart,
-    file_name="media_split_chart.xlsx",
+    label="Скачати Excel",
+    data=output,
+    file_name="media_split_modern.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
