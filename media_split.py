@@ -1,115 +1,120 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from scipy.interpolate import PchipInterpolator
-from io import BytesIO
+from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
-from openpyxl import Workbook
-from openpyxl.styles import PatternFill
+import io
 
-st.title("Media Split Calculator")
+st.set_page_config(layout="wide")
+st.title("Медіа-спліт ТБ + Digital")
 
-# --- Введення точок ---
-def input_points(media_name, max_reach=100.0, n_points=5):
-    st.write(f"### Введіть {n_points} точок для {media_name}")
-    cols = st.columns(n_points)
-    trp_points, reach_points = [], []
-    for i in range(n_points):
-        reach = cols[i].number_input(
-            f"{media_name} Reach % точка {i+1}",
-            min_value=0.0, max_value=float(max_reach), value=float(min(float(max_reach), 20*(i+1))), step=1.0,
-            key=f"{media_name}_reach_{i}"
-        )
-        trp = cols[i].number_input(
-            f"{media_name} TRP точка {i+1}",
-            min_value=1.0, max_value=10000.0, value=float(20*(i+1)), step=1.0,
-            key=f"{media_name}_trp_{i}"
-        )
-        reach_points.append(reach)
-        trp_points.append(trp)
-    return trp_points, reach_points
+# --- Вибір методу естимації ---
+method = st.selectbox(
+    "Метод естимації охоплення",
+    ["Лінійна", "Сплайн", "Логістична (рекомендована)"],
+    help="Логістична крива дає більш реалістичну оцінку насичення аудиторії"
+)
 
-tv_trp_pts, tv_reach_pts = input_points("ТБ", 82)
-digital_trp_pts, digital_reach_pts = input_points("Digital", 99)
+# --- Ввід точок ТБ ---
+st.subheader("Точки ТБ")
+tv_points = []
+tv_max_reach = 82
+for i in range(5):
+    trp = st.number_input(f"ТБ TRP точка {i+1}", min_value=1, max_value=10000, value=20*(i+1))
+    reach = st.number_input(f"ТБ Reach % точка {i+1}", min_value=1.0, max_value=tv_max_reach, value=min(tv_max_reach, 10*(i+1)))
+    tv_points.append((trp, reach))
 
-# --- Естимація охоплення через PCHIP ---
-tv_spline = PchipInterpolator(tv_trp_pts, tv_reach_pts)
-digital_spline = PchipInterpolator(digital_trp_pts, digital_reach_pts)
+# --- Ввід точок Digital ---
+st.subheader("Точки Digital")
+digital_points = []
+digital_max_reach = 99
+for i in range(5):
+    trp = st.number_input(f"Digital TRP точка {i+1}", min_value=1, max_value=10000, value=20*(i+1))
+    reach = st.number_input(f"Digital Reach % точка {i+1}", min_value=1.0, max_value=digital_max_reach, value=min(digital_max_reach, 10*(i+1)))
+    digital_points.append((trp, reach))
 
-# --- Бюджет та тривалість ---
-budget = st.slider("Бюджет, грн", 100_000, 50_000_000, 5_000_000, step=100_000)
-flight_weeks = st.slider("Тривалість флайту, тижні", 1, 30, 4)
-step_percent = st.selectbox("Крок спліту бюджету, %", [5,10,15,20], index=1)
+# --- Логістична крива ---
+def logistic(x, L, k, x0):
+    return L / (1 + np.exp(-k*(x-x0)))
 
-# --- Генерація варіантів спліту ---
-splits = [{"ТБ %": p, "Digital %": 100-p} for p in range(0, 101, step_percent)]
-df = pd.DataFrame(splits)
+def fit_logistic(trp, reach, max_reach):
+    p0 = [max_reach, 0.001, np.median(trp)]
+    params, _ = curve_fit(logistic, trp, reach, p0=p0, maxfev=10000)
+    return params
 
-# --- Розрахунок Reach ---
-tv_max_trp = 10000
-digital_max_trp = 10000
-df["TV Reach %"] = [min(82, tv_spline(tv_max_trp*row["ТБ %"]/100)) for _, row in df.iterrows()]
-df["Digital Reach %"] = [min(99, digital_spline(digital_max_trp*row["Digital %"]/100)) for _, row in df.iterrows()]
-df["Cross Media Reach %"] = df["TV Reach %"] + df["Digital Reach %"] - df["TV Reach %"]*df["Digital Reach %"]/100
-best_idx = df["Cross Media Reach %"].idxmax()
-df["Effective"] = False
-df.loc[best_idx, "Effective"] = True
+tv_trp = np.array([p[0] for p in tv_points])
+tv_reach = np.array([p[1] for p in tv_points])
+digital_trp = np.array([p[0] for p in digital_points])
+digital_reach = np.array([p[1] for p in digital_points])
 
-# --- Вивід таблиці ---
-def highlight_best(row):
-    return ['background-color: lightgreen' if row["Effective"] else '' for _ in row]
+tv_params = fit_logistic(tv_trp, tv_reach, tv_max_reach)
+digital_params = fit_logistic(digital_trp, digital_reach, digital_max_reach)
 
-st.subheader("Опції спліту")
-st.dataframe(df.style.apply(highlight_best, axis=1))
+# --- Опції для симуляції ---
+options = 10
+tv_trp_options = np.linspace(min(tv_trp), max(tv_trp), options)
+digital_trp_options = np.linspace(min(digital_trp), max(digital_trp), options)
 
-# --- Графік спліту ---
-fig, ax = plt.subplots()
-ax.bar([str(i+1) for i in range(len(df))], df["ТБ %"], label="ТБ", color="black")
-ax.bar([str(i+1) for i in range(len(df))], df["Digital %"], bottom=df["ТБ %"], label="Digital", color="red")
-ax.set_ylabel("Доля бюджету %")
-ax.set_xlabel("Опція")
-ax.set_title("Розподіл бюджету по медіа")
+results = []
+for i in range(options):
+    tv_t = tv_trp_options[i]
+    dig_t = digital_trp_options[i]
+    tv_r = logistic(tv_t, *tv_params)
+    dig_r = logistic(dig_t, *digital_params)
+    cross_r = 1 - (1 - tv_r/100)*(1 - dig_r/100)
+    results.append([tv_t, tv_r, dig_t, dig_r, cross_r*100])
+
+df = pd.DataFrame(results, columns=["TV TRP","TV Reach %","Digital TRP","Digital Reach %","CrossMedia Reach %"])
+
+# --- Відображення таблиці ---
+st.subheader("Результати сплітів")
+st.dataframe(df.style.format("{:.2f}"))
+
+# --- Графік охоплень ---
+st.subheader("Графік охоплень")
+fig, ax = plt.subplots(figsize=(10,5))
+ax.plot(tv_trp_options, [r[1] for r in results], 'k-o', label="TV Reach")
+ax.plot(digital_trp_options, [r[3] for r in results], 'r-o', label="Digital Reach")
+ax.plot(tv_trp_options, [r[4] for r in results], 'g--', label="CrossMedia Reach")
+ax.set_xlabel("TRP / Impressions")
+ax.set_ylabel("Reach %")
 ax.legend()
 st.pyplot(fig)
 
-# --- Графік охоплення ---
-fig2, ax2 = plt.subplots()
-ax2.plot(range(1,len(df)+1), df["TV Reach %"], marker="o", color="black", label="ТБ")
-ax2.plot(range(1,len(df)+1), df["Digital Reach %"], marker="o", color="red", label="Digital")
-ax2.plot(range(1,len(df)+1), df["Cross Media Reach %"], marker="o", color="green", label="Cross Media")
-ax2.set_ylabel("Охоплення %")
-ax2.set_xlabel("Опція")
-ax2.set_title("Естимоване охоплення")
+# --- Графік спліту по бюджету ---
+st.subheader("Спліт бюджету (умовно 50% на ТБ і Digital)")
+fig2, ax2 = plt.subplots(figsize=(10,4))
+tv_share = [50]*options
+dig_share = [50]*options
+ax2.bar(range(1, options+1), tv_share, color='black', label='TV')
+ax2.bar(range(1, options+1), dig_share, bottom=tv_share, color='red', label='Digital')
+ax2.set_xlabel("Варіанти спліту")
+ax2.set_ylabel("Доля бюджету %")
+ax2.set_xticks(range(1, options+1))
 ax2.legend()
 st.pyplot(fig2)
 
-# --- Експорт в Excel ---
-output = BytesIO()
-wb = Workbook()
-ws = wb.active
-ws.title = "Media Split"
+# --- Експорт в Excel з графіками ---
+output = io.BytesIO()
+with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    df.to_excel(writer, index=False, sheet_name="Results")
+    workbook  = writer.book
+    worksheet = writer.sheets["Results"]
+    
+    # Графік охоплень
+    chart = workbook.add_chart({'type': 'line'})
+    chart.add_series({'name': 'TV Reach', 'categories': [0,1,options,1], 'values': [0,1,options,1]})
+    # (спрощено, можна додати серії для Digital і CrossMedia)
+    
+    writer.save()
 
-# Запис таблиці
-for r_idx, row in enumerate(df.itertuples(), 1):
-    ws.cell(row=r_idx+1, column=1, value=r_idx)  # опція
-    ws.cell(row=r_idx+1, column=2, value=row._1) # ТБ %
-    ws.cell(row=r_idx+1, column=3, value=row._2) # Digital %
-    ws.cell(row=r_idx+1, column=4, value=row._3) # TV Reach %
-    ws.cell(row=r_idx+1, column=5, value=row._4) # Digital Reach %
-    ws.cell(row=r_idx+1, column=6, value=row._5) # Cross Media Reach %
-    if row.Effective:
-        for c in range(1,7):
-            ws.cell(row=r_idx+1, column=c).fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+st.download_button(
+    "Завантажити результати в Excel",
+    data=output,
+    file_name="media_split.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
-# Заголовки
-headers = ["Option","ТБ %","Digital %","TV Reach %","Digital Reach %","Cross Media Reach %"]
-for c_idx, val in enumerate(headers,1):
-    ws.cell(row=1, column=c_idx, value=val)
-
-wb.save(output)
-st.download_button("⬇️ Завантажити Excel з графіками та таблицею", data=output.getvalue(),
-                   file_name="media_split.xlsx",
-                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 
