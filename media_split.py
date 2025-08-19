@@ -2,115 +2,84 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from itertools import product
+from scipy.optimize import minimize
 
-# -------------------------------
-# Допоміжні функції
-# -------------------------------
+# --- Вхідні параметри ---
+st.title("📊 Оптимальний спліт ТБ + Digital")
 
-def cross_media_reach(reach_tv, reach_digital):
-    """Кросмедійне охоплення як ймовірність двох незалежних подій"""
-    return reach_tv + reach_digital - (reach_tv * reach_digital)
+budget = st.number_input("Загальний бюджет", min_value=1000, step=1000, value=50000)
+flight_weeks = st.number_input("Тривалість флайту (тижні)", min_value=1, value=4)
 
-def calculate_option(budget, cost_tv, cost_digital, 
-                     clutter_tv, clutter_digital,
-                     competitor_tv, competitor_digital,
-                     weeks, share_tv):
-    """
-    Розрахунок одного спліта ТВ/Діджитал
-    """
-    spend_tv = budget * share_tv
-    spend_digital = budget * (1 - share_tv)
+# --- TV параметри ---
+tv_cost_per_reach = st.number_input("Вартість 1 охоплення в ТБ", value=5.0)
+tv_weekly_clutter = st.number_input("Клаттер конкурентів (ТРП/тиждень в ТБ)", value=100.0)
 
-    # Якщо немає грошей
-    if spend_tv < cost_tv or spend_digital < cost_digital:
-        return None
+# --- Digital параметри ---
+digital_cost_per_reach = st.number_input("Вартість 1 охоплення в Digital", value=2.0)
+digital_weekly_clutter = st.number_input("Клаттер конкурентів (імпресії/тиждень)", value=50000.0)
 
-    # Розрахунок тиску
-    trp_tv = spend_tv / cost_tv
-    trp_digital = spend_digital / cost_digital
+# --- Скільки варіантів ---
+n_options = st.slider("Кількість варіантів сплітів", 5, 15, 10)
 
-    # Клаттер
-    eff_trp_tv = max(0, trp_tv - clutter_tv)
-    eff_trp_digital = max(0, trp_digital - clutter_digital)
+# --- Генерація варіантів ---
+results = []
+for split in np.linspace(0.1, 0.9, n_options):  # від 10% до 90%
+    tv_budget = budget * split
+    digital_budget = budget * (1 - split)
 
-    # Охоплення (умовно: saturating function)
-    reach_tv = 1 - np.exp(-eff_trp_tv / (weeks * 100))
-    reach_digital = 1 - np.exp(-eff_trp_digital / (weeks * 100))
+    # Охоплення
+    tv_reach = tv_budget / tv_cost_per_reach
+    digital_reach = digital_budget / digital_cost_per_reach
 
-    # Кросмедійне охоплення
-    cross_reach = cross_media_reach(reach_tv, reach_digital)
+    # Ймовірність крос-медійного охоплення
+    cross_reach = 1 - (1 - tv_reach/1e6) * (1 - digital_reach/1e6)  # нормалізація
+
+    # Тиск (TV = TRP, Digital = імпресії)
+    tv_pressure = tv_reach / flight_weeks
+    digital_pressure = digital_reach / flight_weeks
 
     # Перевірка конкурентів
-    tv_vs_comp = "OK" if eff_trp_tv >= competitor_tv else "Нижче конкурентів"
-    dig_vs_comp = "OK" if eff_trp_digital >= competitor_digital else "Нижче конкурентів"
+    tv_ok = tv_pressure >= tv_weekly_clutter
+    digital_ok = digital_pressure >= digital_weekly_clutter
+    overall_ok = tv_ok and digital_ok
 
-    return {
-        "Share TV": round(share_tv * 100, 1),
-        "Spend TV": round(spend_tv, 0),
-        "Spend Digital": round(spend_digital, 0),
-        "TRP TV": round(eff_trp_tv, 1),
-        "TRP Digital": round(eff_trp_digital, 1),
-        "Reach TV": round(reach_tv * 100, 1),
-        "Reach Digital": round(reach_digital * 100, 1),
-        "Cross Reach": round(cross_reach * 100, 1),
-        "TV vs Competitors": tv_vs_comp,
-        "Digital vs Competitors": dig_vs_comp
-    }
+    results.append({
+        "Спліт ТБ": f"{split*100:.0f}%",
+        "Бюджет ТБ": int(tv_budget),
+        "Бюджет Digital": int(digital_budget),
+        "Охоплення ТБ": int(tv_reach),
+        "Охоплення Digital": int(digital_reach),
+        "Крос-охоплення": f"{cross_reach*100:.1f}%",
+        "Тиск ТБ/тижд": int(tv_pressure),
+        "Тиск Digital/тижд": int(digital_pressure),
+        "Ефективний": overall_ok
+    })
 
-# -------------------------------
-# Streamlit UI
-# -------------------------------
+df = pd.DataFrame(results)
 
-st.title("📊 Оптимальний спліт ТВ / Діджитал")
+# --- Підсвітка кольорами ---
+def highlight(row):
+    color = "background-color: lightgreen" if row["Ефективний"] else "background-color: lightcoral"
+    return [color] * len(row)
 
-budget = st.number_input("Загальний бюджет, $", min_value=1000, value=100000, step=1000)
-cost_tv = st.number_input("Вартість 1 TRP на ТБ, $", min_value=1, value=500)
-cost_digital = st.number_input("Вартість 1000 цільових імпресій, $", min_value=1, value=5)
+st.subheader("📑 Результати")
+st.dataframe(df.style.apply(highlight, axis=1))
 
-clutter_tv = st.number_input("Клаттер (ТРП на тиждень)", min_value=0, value=50)
-clutter_digital = st.number_input("Клаттер (тис. імпресій на тиждень)", min_value=0, value=100)
+# --- Графік ---
+st.subheader("📈 Візуалізація сплітів")
+fig, ax = plt.subplots()
+ax.plot(df["Спліт ТБ"], [float(x[:-1]) for x in df["Крос-охоплення"]], marker="o")
+ax.set_ylabel("Крос-охоплення %")
+ax.set_xlabel("Спліт ТБ")
+ax.set_title("Крос-медійне охоплення залежно від спліта")
+plt.xticks(rotation=45)
+st.pyplot(fig)
 
-competitor_tv = st.number_input("Конкурентний тиск на ТБ (ТРП на тиждень)", min_value=0, value=150)
-competitor_digital = st.number_input("Конкурентний тиск у Digital (тис. імпресій на тиждень)", min_value=0, value=300)
-
-weeks = st.number_input("Тривалість флайту (тижні)", min_value=1, value=4)
-num_options = st.slider("Кількість варіантів", min_value=5, max_value=10, value=5)
-
-# -------------------------------
-# Генерація варіантів
-# -------------------------------
-results = []
-splits = np.linspace(0.1, 0.9, num_options)  # частки ТВ
-
-for share_tv in splits:
-    option = calculate_option(
-        budget, cost_tv, cost_digital,
-        clutter_tv, clutter_digital,
-        competitor_tv, competitor_digital,
-        weeks, share_tv
-    )
-    if option:
-        results.append(option)
-
-if results:
-    df = pd.DataFrame(results)
-    st.dataframe(df)
-
-    # Графік
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(df["Share TV"], df["Cross Reach"], marker="o")
-    ax.set_xlabel("Частка ТВ, %")
-    ax.set_ylabel("Кросмедійне охоплення, %")
-    ax.set_title("Залежність охоплення від спліту")
-    st.pyplot(fig)
-
-    # Експорт
-    if st.button("📥 Завантажити Excel"):
-        file_path = "media_split_results.xlsx"
-        df.to_excel(file_path, index=False)
-        with open(file_path, "rb") as f:
-            st.download_button("Скачати файл", f, file_name=file_path)
-else:
-    st.error("❌ Недостатньо бюджету для запуску кампанії. Спробуйте збільшити бюджет або скоротити тривалість флайту.")
+# --- Експорт ---
+st.download_button(
+    "⬇️ Завантажити результати в Excel",
+    data=df.to_excel("results.xlsx", index=False, engine="openpyxl"),
+    file_name="media_split.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
