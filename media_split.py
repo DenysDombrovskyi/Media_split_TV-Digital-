@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import io
 from scipy.interpolate import CubicSpline
 from openpyxl import load_workbook
-from openpyxl.chart import BarChart, Reference
+from openpyxl.chart import BarChart, LineChart, Reference
 
 st.title("📊 Оптимальний спліт ТБ + Digital з CPR і графіком Excel")
 
@@ -105,7 +105,7 @@ def highlight(row):
 st.subheader("Результати сплітів")
 st.dataframe(df.style.apply(highlight, axis=1))
 
-# --- 1️⃣ Stacked графік бюджету ---
+# --- Stacked графік бюджету ---
 st.subheader("📊 Розподіл бюджету по варіантах спліту (stacked)")
 fig, ax = plt.subplots(figsize=(10,5))
 x = np.arange(len(df))
@@ -119,7 +119,7 @@ ax.legend()
 plt.xticks(rotation=45)
 st.pyplot(fig)
 
-# --- 2️⃣ Лінійний графік охоплення ---
+# --- Лінійний графік охоплення ---
 st.subheader("📈 Охоплення по всіх варіантах спліту")
 fig2, ax2 = plt.subplots(figsize=(10,5))
 ax2.plot(df["Спліт ТБ"], df["Reach_TV %"], marker='o', label="Reach_TV %")
@@ -131,8 +131,8 @@ ax2.legend()
 plt.xticks(rotation=45)
 st.pyplot(fig2)
 
-# --- Експорт Excel з графіком ---
-st.subheader("⬇️ Завантаження Excel з графіком")
+# --- Експорт Excel з оновленими графіками ---
+st.subheader("⬇️ Завантаження Excel з графіками")
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="Splits")
@@ -141,25 +141,37 @@ output.seek(0)
 wb = load_workbook(output)
 ws = wb["Splits"]
 
-chart = BarChart()
-chart.type = "col"
-chart.title = "Охоплення по варіантах спліту"
-chart.y_axis.title = "Reach %"
-chart.x_axis.title = "Спліт ТБ"
+# --- Stacked bar chart бюджету ---
+budget_chart = BarChart()
+budget_chart.type = "col"
+budget_chart.title = "Розподіл бюджету ТБ/Digital"
+budget_chart.y_axis.title = "Бюджет"
+budget_chart.x_axis.title = "Спліт ТБ"
+data = Reference(ws, min_col=2, max_col=3, min_row=1, max_row=ws.max_row)
+cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
+budget_chart.add_data(data, titles_from_data=True)
+budget_chart.set_categories(cats)
+budget_chart.shape = 4
+budget_chart.overlap = 100
+ws.add_chart(budget_chart, "L2")
 
+# --- Лінійний графік охоплення ---
+reach_chart = LineChart()
+reach_chart.title = "Охоплення по сплітах"
+reach_chart.y_axis.title = "Reach %"
+reach_chart.x_axis.title = "Спліт ТБ"
 data = Reference(ws, min_col=7, max_col=9, min_row=1, max_row=ws.max_row)
 cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
-chart.add_data(data, titles_from_data=True)
-chart.set_categories(cats)
-chart.shape = 4
-ws.add_chart(chart, "L2")
+reach_chart.add_data(data, titles_from_data=True)
+reach_chart.set_categories(cats)
+ws.add_chart(reach_chart, "L20")
 
 output_chart = io.BytesIO()
 wb.save(output_chart)
 output_chart.seek(0)
 
 st.download_button(
-    label="Скачати Excel з графіком",
+    label="Скачати Excel з графіками",
     data=output_chart,
     file_name="media_split_chart.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
