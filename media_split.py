@@ -47,9 +47,10 @@ with st.expander("TRP → Reach Digital (5 точок)"):
 tv_spline = CubicSpline(tv_trp_points, tv_reach_points)
 dig_spline = CubicSpline(dig_trp_points, dig_reach_points)
 
-# --- Генерація варіантів сплітів ---
+# --- Генерація варіантів сплітів з обраним кроком ---
 split_step = split_step_percent / 100.0
-split_values = np.linspace(0.1, 0.9, n_options)
+split_values = np.arange(split_step, 1.0, split_step)
+split_values = split_values[:n_options]  # обмеження кількості опцій
 results = []
 budget_warning = False
 min_needed_budget = 0
@@ -135,12 +136,23 @@ fig_reach = px.line(df, x="Опція", y=["Reach_TV %","Reach_Digital %","Cross
                     markers=True, title="Reach TV / Digital / Cross")
 st.plotly_chart(fig_reach, use_container_width=True)
 
+# --- Виведення таблиці ---
+st.subheader("📋 Варіанти сплітів та ключові показники")
+def highlight_rows(row):
+    if row['Опція'] == best_option['Опція']:
+        return ['background-color: lightblue']*len(row)
+    elif row['Ефективний']:
+        return ['background-color: lightgreen']*len(row)
+    else:
+        return ['background-color: salmon']*len(row)
+
+st.dataframe(df.style.apply(highlight_rows, axis=1))
+
 # --- Excel download ---
 st.subheader("⬇️ Завантаження Excel з виділенням найкращого CPR")
 output = io.BytesIO()
 with pd.ExcelWriter(output, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="Splits")
-# ❌ writer.save() не потрібен
 
 output.seek(0)
 wb = load_workbook(output)
