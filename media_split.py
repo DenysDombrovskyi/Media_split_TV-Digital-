@@ -34,10 +34,10 @@ def input_points(media_name):
         reach = cols[1].number_input(f"{media_name} Reach % точка {i+1}", min_value=0.0, max_value=100.0, value=20.0*(i+1))
         trp_points.append(trp)
         reach_points.append(reach/100)
-    return CubicSpline(trp_points, reach_points)
+    return CubicSpline(trp_points, reach_points), trp_points
 
-tv_spline = input_points("ТБ")
-dig_spline = input_points("Digital")
+tv_spline, tv_trp_points = input_points("ТБ")
+dig_spline, dig_trp_points = input_points("Digital")
 
 # --- Генерація сплітів ---
 split_step = split_step_percent / 100.0
@@ -131,7 +131,7 @@ fig_reach = px.line(df, x="Опція", y=["Reach_TV %","Reach_Digital %","Cross
                     markers=True, title="Reach TV / Digital / Cross")
 
 if show_tv_points:
-    tv_reach_pts = [tv_spline.y[i]*100 for i in range(5)]
+    tv_reach_pts = [tv_spline(trp)*100 for trp in tv_trp_points]
     fig_reach.add_scatter(
         x=[f"Опція {i+1}" for i in range(5)],
         y=tv_reach_pts,
@@ -143,7 +143,7 @@ if show_tv_points:
     )
 
 if show_dig_points:
-    dig_reach_pts = [dig_spline.y[i]*100 for i in range(5)]
+    dig_reach_pts = [dig_spline(trp)*100 for trp in dig_trp_points]
     fig_reach.add_scatter(
         x=[f"Опція {i+1}" for i in range(5)],
         y=dig_reach_pts,
